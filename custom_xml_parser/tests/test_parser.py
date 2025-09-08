@@ -1,11 +1,8 @@
 import unittest
-import sys
 import os
+import sys
 
-# Add the parent directory to the path to find the parser module
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-from parser import deserialize, serialize, merge
+from custom_xml_parser.parser import deserialize, serialize, merge
 
 EXAMPLE_DATA = """
 # 餌発見
