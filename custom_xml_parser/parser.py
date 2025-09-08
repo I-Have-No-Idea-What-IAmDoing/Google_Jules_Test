@@ -91,6 +91,30 @@ def deserialize(text: str) -> dict:
     return root
 
 
+def merge(d1: dict, d2: dict) -> dict:
+    """
+    Recursively merges two dictionaries.
+
+    Values from d1 take precedence. If a key exists in both and the values are
+    dictionaries, the dictionaries are merged recursively.
+
+    Args:
+        d1: The primary dictionary (has priority).
+        d2: The secondary dictionary.
+
+    Returns:
+        The merged dictionary.
+    """
+    merged = d1.copy()
+    for key, value in d2.items():
+        if key in merged:
+            if isinstance(merged[key], dict) and isinstance(value, dict):
+                merged[key] = merge(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
 def serialize(data: dict) -> str:
     """
     Serializes a nested dictionary into a string in the custom XML-like format.

@@ -5,7 +5,7 @@ import os
 # Add the parent directory to the path to find the parser module
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from parser import deserialize, serialize
+from parser import deserialize, serialize, merge
 
 EXAMPLE_DATA = """
 # 餌発見
@@ -171,6 +171,45 @@ class TestParser(unittest.TestCase):
         # Mismatched closing tag name
         with self.assertRaises(ValueError, msg="Failed on wrong closing tag name"):
             deserialize("<tag>\n</tag_wrong>")
+
+    def test_merge(self):
+        """Tests the deep merging of two dictionaries."""
+        d1 = {
+            "action1": {
+                "tag1": {"#text": "d1t1"},
+                "tag2": {"#text": "d1t2"}
+            },
+            "action2": {"#text": "d1a2"}
+        }
+        d2 = {
+            "action1": {
+                "tag2": {"#text": "d2t2"}, # Should be ignored
+                "tag3": {"#text": "d2t3"}  # Should be added
+            },
+            "action3": {"#text": "d2a3"} # Should be added
+        }
+
+        expected = {
+            "action1": {
+                "tag1": {"#text": "d1t1"},
+                "tag2": {"#text": "d1t2"}, # From d1
+                "tag3": {"#text": "d2t3"}  # From d2
+            },
+            "action2": {"#text": "d1a2"}, # From d1
+            "action3": {"#text": "d2a3"}  # From d2
+        }
+
+        merged = merge(d1, d2)
+        self.assertEqual(merged, expected)
+
+        # Test with special keys
+        d3 = {"tag": {"#text": "text1", "#comments": ["c1"]}}
+        d4 = {"tag": {"#text": "text2", "#comments": ["c2"], "sub": {}}}
+
+        expected2 = {"tag": {"#text": "text1", "#comments": ["c1"], "sub": {}}}
+        merged2 = merge(d3, d4)
+        self.assertEqual(merged2, expected2)
+
 
     def test_unclosed_tags(self):
         """Tests that unclosed tags raise a ValueError."""
