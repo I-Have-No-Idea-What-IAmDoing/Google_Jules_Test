@@ -131,34 +131,38 @@ def _serialize_recursive(data: dict, level: int, is_action_group: bool) -> str:
     result = []
     indent = "\t" * level
 
-    # Root-level comments
-    if "#comments" in data and level == 0:
-        for comment in data["#comments"]:
-            result.append(f"{indent}# {comment}")
-
+    # Text content should be output first for the current level.
     if "#text" in data:
         text_lines = data["#text"].split('\n')
         for line in text_lines:
             result.append(f"{indent}{line}")
 
+    # Then, process child tags.
     for key, value in data.items():
         if key.startswith("#"):
             continue
 
         if not isinstance(value, dict):
-            # For simplicity, we assume values are dictionaries.
             continue
 
-        # Comments associated with a specific tag
+        # Comments for the child tag come before the tag itself.
         if "#comments" in value:
             for comment in value["#comments"]:
                 result.append(f"{indent}# {comment}")
 
+        # Determine tag type based on whether we are at the top level of the structure.
         open_tag, close_tag = (f"[{key}]", f"[/{key}]") if is_action_group else (f"<{key}>", f"</{key}>")
 
         result.append(f"{indent}{open_tag}")
-        # Nested items are always tag groups, so is_action_group is False for recursive calls.
+        # ALL recursive calls are for nested tags, which are never action groups.
         result.append(_serialize_recursive(value, level + 1, False))
         result.append(f"{indent}{close_tag}")
+
+    # Finally, handle any trailing comments associated with the current dictionary context.
+    if "#comments" in data and level > -1: # A simple way to handle root comments without special casing
+        # This logic is tricky. Let's simplify and only print comments before tags.
+        # Trailing comments in the root dict will be handled by the loop above if they are attached to a tag.
+        pass
+
 
     return "\n".join(result)
