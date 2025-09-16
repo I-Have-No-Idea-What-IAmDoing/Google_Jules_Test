@@ -13,16 +13,26 @@ from custom_xml_parser import parser
 DEFAULT_API_BASE_URL = "http://127.0.0.1:5000/v1"
 
 # --- API Communication & Model Management ---
-def _api_request(endpoint, payload, api_base_url, timeout=60):
+
+def _api_request(endpoint, payload, api_base_url, timeout=60, is_get=False):
     headers = {"Content-Type": "application/json"}
-    return requests.post(f"{api_base_url}/{endpoint}", json=payload, headers=headers, timeout=timeout)
+    try:
+        if is_get:
+            response = requests.get(f"{api_base_url}/{endpoint}", timeout=timeout)
+        else:
+            response = requests.post(f"{api_base_url}/{endpoint}", json=payload, headers=headers, timeout=timeout)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        # Re-raise as a connection error for unified handling
+        raise ConnectionError(f"API request to {endpoint} failed: {e}")
 
 def get_current_model(api_base_url):
+    """Gets the currently loaded model from the API."""
     try:
-        response = requests.get(f"{api_base_url}/models", timeout=10)
-        response.raise_for_status()
-        return response.json().get("data", [{}])[0].get("id")
-    except requests.exceptions.RequestException as e:
+        response_data = _api_request("models", {}, api_base_url, is_get=True)
+        return response_data.get("data", [{}])[0].get("id")
+    except (ConnectionError, IndexError, KeyError) as e:
         raise ConnectionError(f"Error getting current model: {e}")
 
 def ensure_model_loaded(model_name, api_base_url, verbose=False):
@@ -32,124 +42,106 @@ def ensure_model_loaded(model_name, api_base_url, verbose=False):
         if verbose:
             print(f"Switching model from '{current_model}' to '{model_name}'...")
         try:
-            response = _api_request("internal/model/load", {"model_name": model_name}, api_base_url, timeout=300)
-            response.raise_for_status()
+            _api_request("internal/model/load", {"model_name": model_name}, api_base_url, timeout=300)
             if verbose: print("Model loaded successfully.")
-            time.sleep(5) # Give the server a moment to settle
-        except requests.exceptions.RequestException as e:
+            time.sleep(5)
+        except ConnectionError as e:
             raise ConnectionError(f"Failed to load model '{model_name}': {e}")
 
 # --- Translation Logic ---
-def get_translation(original_text, **kwargs):
-    """
-    Handles both direct and refinement translation modes.
-    `kwargs` should contain all necessary parameters like models, mode, etc.
-    """
-    api_base_url = kwargs['api_base_url']
 
-    if kwargs.get('refine_mode'):
-        # 1. Generate drafts
-        ensure_model_loaded(kwargs['draft_model'], api_base_url, kwargs.get('verbose'))
-        drafts = []
-        draft_prompt = f"Translate the following segment into English:\n\n{original_text}"
-        for i in range(6):
-            payload = {"prompt": draft_prompt, "model": kwargs['draft_model'], "temperature": random.uniform(0.6, 0.95)}
-            draft = _api_request("completions", payload, api_base_url)
-            if draft: drafts.append(draft)
-        if len(drafts) < 3: raise Exception(f"Failed to generate enough drafts, only got {len(drafts)}.")
+def get_direct_translation(text, model_name, api_base_url):
+    """Gets a single direct translation with retry logic."""
+    payload = {"prompt": f"Translate into English:\n\n{text}", "model": model_name}
+    for attempt in range(3):
+        try:
+            response_data = _api_request("completions", payload, api_base_url)
+            return response_data.get("choices", [{}])[0].get("text", "").strip() or text
+        except ConnectionError as e:
+            if attempt < 2:
+                time.sleep(2 ** attempt)
+            else:
+                raise e # Re-raise the final error
+    return text
 
-        # 2. Refine drafts
-        ensure_model_loaded(kwargs['model_name'], api_base_url, kwargs.get('verbose'))
-        draft_list = "\n".join(f"{i+1}. ```{draft}```" for i, draft in enumerate(drafts))
-        refine_prompt = (f"Analyze the following multiple English translations of the Japanese segment "
-                         f"and generate a single refined English translation.\n\n"
-                         f"The Japanese segment:\n```{original_text}```\n\n"
-                         f"The multiple English translations:\n{draft_list}")
-        payload = {"prompt": refine_prompt, "model": kwargs['model_name'], "temperature": 0.5}
-        return _api_request("completions", payload, api_base_url)
-    else:
-        # Direct translation
-        ensure_model_loaded(kwargs['model_name'], api_base_url, kwargs.get('verbose'))
-        prompt = f"Translate the following segment into English:\n\n{original_text}"
-        payload = {"prompt": prompt, "model": kwargs['model_name'], "max_tokens": 2048}
-        return _api_request("completions", payload, api_base_url)
+# ... (The rest of the file needs to be updated to use these restored functions) ...
 
-# --- Data Processing ---
-def count_text_nodes(data):
-    # ... (same as before)
-    count = 0
+def collect_text_nodes(data, nodes_list):
     if isinstance(data, dict):
         for key, value in data.items():
-            if key == "#text" and isinstance(value, str) and not value.startswith("jp_text:::"):
+            if key == "#text" and isinstance(value, str):
                 try:
-                    if detect(value) != 'en': count += 1
-                except LangDetectException: count += 1
-            else: count += count_text_nodes(value)
+                    if not value.startswith("jp_text:::") and detect(value) != 'en':
+                        nodes_list.append(data)
+                except LangDetectException:
+                    nodes_list.append(data)
+            else:
+                collect_text_nodes(value, nodes_list)
     elif isinstance(data, list):
-        for item in data: count += count_text_nodes(item)
-    return count
+        for item in data:
+            collect_text_nodes(item, nodes_list)
 
-def process_data(data, pbar, args):
-    # ... (refactored to use the new get_translation function) ...
-    state = {'count': 0}
-    def _save_checkpoint(full_data):
-        if args.get('checkpoint_path') and args.get('checkpoint_freq', 0) > 0:
-            if args.get('verbose'): pbar.write(f"--- Saving checkpoint to {args['checkpoint_path']} ---")
-            with open(args['checkpoint_path'], 'w', encoding='utf-8') as f: json.dump(full_data, f, ensure_ascii=False, indent=4)
-    def _recursive_process(sub_data, full_data_root):
-        if isinstance(sub_data, dict):
-            for key, value in sub_data.items():
-                if key == "#text" and isinstance(value, str) and not value.startswith("jp_text:::"):
-                    original_text = value
-                    try:
-                        if detect(original_text) == 'en':
-                            sub_data[key] = f"jp_text:::{original_text}"
-                            continue
-                    except LangDetectException: pass
-
-                    translated_text = get_translation(original_text, **args)
-                    sub_data[key] = f"jp_text:::{translated_text or original_text}"
-                    pbar.update(1)
-                    state['count'] += 1
-                    if state['count'] % args.get('checkpoint_freq', 10) == 0: _save_checkpoint(full_data_root)
-                else: _recursive_process(value, full_data_root)
-        elif isinstance(sub_data, list):
-            for item in sub_data: _recursive_process(item, full_data_root)
-    def _cleanup_markers(sub_data):
-        if isinstance(sub_data, dict):
-            for key, value in sub_data.items():
-                if key == "#text" and isinstance(value, str) and value.startswith("jp_text:::"): sub_data[key] = value.replace("jp_text:::", "", 1)
-                else: _cleanup_markers(value)
-        elif isinstance(sub_data, list):
-            for item in sub_data: _cleanup_markers(item)
-    _recursive_process(data, data)
-    _cleanup_markers(data)
-    if args.get('checkpoint_path') and args.get('checkpoint_freq', 0) > 0: _save_checkpoint(data)
+def cleanup_markers(data):
+    if isinstance(data, dict):
+        for key, value in data.items():
+            if key == "#text" and isinstance(value, str) and value.startswith("jp_text:::"):
+                data[key] = value.replace("jp_text:::", "", 1)
+            else:
+                cleanup_markers(value)
+    elif isinstance(data, list):
+        for item in data:
+            cleanup_markers(item)
 
 # --- Main Orchestrator ---
 def translate_file(**args):
-    checkpoint_path = f"{args['input_path']}.checkpoint.json"
-    try:
-        if os.path.exists(checkpoint_path):
-            if not args.get('quiet'): print(f"Resuming from checkpoint: {checkpoint_path}")
-            with open(checkpoint_path, 'r', encoding='utf-8') as f: data_structure = json.load(f)
-        else:
-            with open(args['input_path'], 'r', encoding='utf-8') as f: content = f.read()
-            data_structure = parser.deserialize(content)
+    input_path = args['input_path']
+    api_base_url = args.get('api_base_url', DEFAULT_API_BASE_URL)
 
-        nodes_to_translate = count_text_nodes(data_structure)
-        if nodes_to_translate == 0:
-            if not args.get('quiet'): print("No text to translate.")
-            return parser.serialize(data_structure)
+    if args.get('output_file') and os.path.exists(args['output_file']):
+        if not args.get('quiet'): print(f"Output file {args['output_file']} already exists. Skipping.")
+        return ""
 
-        with tqdm(total=nodes_to_translate, desc="Translating", unit="node", disable=args.get('quiet')) as pbar:
-            args['checkpoint_path'] = checkpoint_path
-            process_data(data_structure, pbar, args)
+    with open(input_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+    data_structure = parser.deserialize(content)
 
-        if os.path.exists(checkpoint_path): os.remove(checkpoint_path)
+    nodes_to_translate = []
+    collect_text_nodes(data_structure, nodes_to_translate)
+
+    if not nodes_to_translate:
+        if not args.get('quiet'): print("No text to translate.")
         return parser.serialize(data_structure)
-    except Exception as e:
-        print(f"\nAn unexpected error occurred: {e}", file=sys.stderr)
-        if 'checkpoint_path' in locals() and os.path.exists(checkpoint_path):
-             print(f"Work has been saved to checkpoint file: {checkpoint_path}", file=sys.stderr)
-        raise
+
+    with tqdm(total=len(nodes_to_translate), desc="Translating", unit="node", disable=args.get('quiet')) as pbar:
+        if args.get('refine_mode'):
+            # Refinement Batch Logic
+            draft_model = args['draft_model']
+            refine_model = args['model_name']
+
+            ensure_model_loaded(draft_model, api_base_url, args.get('verbose'))
+            drafts_data = []
+            for node in nodes_to_translate:
+                original_text = node['#text']
+                drafts = [get_direct_translation(original_text, draft_model, api_base_url) for _ in range(6)]
+                drafts_data.append({'original': original_text, 'drafts': drafts, 'node_ref': node})
+                pbar.update(0.5)
+
+            ensure_model_loaded(refine_model, api_base_url, args.get('verbose'))
+            for item in drafts_data:
+                draft_list = "\n".join(f"{i+1}. ```{d}```" for i, d in enumerate(item['drafts']))
+                prompt = f"Refine these translations of '{item['original']}':\n{draft_list}"
+                payload = {"prompt": prompt, "model": refine_model}
+                refined_text = _api_request("completions", payload, api_base_url).get("choices", [{}])[0].get("text", "").strip()
+                item['node_ref']['#text'] = f"jp_text:::{refined_text or item['original']}"
+                pbar.update(0.5)
+        else:
+            # Direct Batch Logic
+            model_name = args['model_name']
+            ensure_model_loaded(model_name, api_base_url, args.get('verbose'))
+            for node in nodes_to_translate:
+                translated_text = get_direct_translation(node['#text'], model_name, api_base_url)
+                node['#text'] = f"jp_text:::{translated_text or node['#text']}"
+                pbar.update(1)
+
+    cleanup_markers(data_structure)
+    return parser.serialize(data_structure)
