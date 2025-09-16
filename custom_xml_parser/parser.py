@@ -13,10 +13,10 @@ def deserialize(text: str) -> Dict[str, Any]:
     text_buffer: List[str] = []
     comment_buffer: List[str] = []
 
-    action_start_re = re.compile(r'^\s*\[([a-zA-Z0-9_]+)\]\s*$')
-    action_end_re = re.compile(r'^\s*\[/([a-zA-Z0-9_]+)\]\s*$')
-    tag_start_re = re.compile(r'^\s*<([a-zA-Z0-9_]+)>\s*$')
-    tag_end_re = re.compile(r'^\s*</([a-zA-Z0-9_]+)>\s*$')
+    action_start_re = re.compile(r'^\s*\[([a-zA-Z0-9_.-]+)\]\s*$')
+    action_end_re = re.compile(r'^\s*\[/([a-zA-Z0-9_.-]+)\]\s*$')
+    tag_start_re = re.compile(r'^\s*<([a-zA-Z0-9_.-]+)>\s*$')
+    tag_end_re = re.compile(r'^\s*</([a-zA-Z0-9_.-]+)>\s*$')
 
     def flush_text_buffer():
         if text_buffer:
