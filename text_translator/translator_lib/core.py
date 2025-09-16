@@ -59,12 +59,16 @@ def ensure_model_loaded(model_name, api_base_url, verbose=False):
 
 # --- Translation Logic ---
 
-def get_translation(text, model_name, api_base_url, **kwargs):
+def get_translation(text, model_name, api_base_url, glossary_text=None, **kwargs):
     """
     Gets a translation for a single piece of text, with retries.
     This is the simplest translation function, used for drafts and direct mode.
     """
-    payload = {"prompt": f"Translate into English:\n\n{text}", "model": model_name}
+    prompt = f"Translate into English:\n\n{text}"
+    if glossary_text:
+        prompt = f"Please use this glossary for context:\n{glossary_text}\n\nTranslate into English:\n\n{text}"
+
+    payload = {"prompt": prompt, "model": model_name}
     for attempt in range(3):
         try:
             response_data = _api_request("completions", payload, api_base_url)
@@ -125,6 +129,8 @@ def translate_file(**args):
     """
     input_path = args['input_path']
     api_base_url = args.get('api_base_url', DEFAULT_API_BASE_URL)
+    glossary_text = args.get('glossary_text')
+    glossary_for = args.get('glossary_for', 'all')
 
     if args.get('output_file') and os.path.exists(args['output_file']):
         if not args.get('quiet'): print(f"Output file {args['output_file']} already exists. Skipping.")
@@ -153,7 +159,8 @@ def translate_file(**args):
             pbar.set_description(f"Drafting ({draft_model})")
             for node in nodes_to_translate:
                 original_text = node['#text']
-                drafts = [get_translation(original_text, draft_model, api_base_url) for _ in range(num_drafts)]
+                draft_glossary = glossary_text if glossary_for in ['draft', 'all'] else None
+                drafts = [get_translation(original_text, draft_model, api_base_url, glossary_text=draft_glossary) for _ in range(num_drafts)]
                 drafts_data.append({'original': original_text, 'drafts': drafts, 'node_ref': node})
                 pbar.update(0.5)
 
@@ -162,6 +169,8 @@ def translate_file(**args):
             for item in drafts_data:
                 draft_list = "\n".join(f"{i+1}. ```{d}```" for i, d in enumerate(item['drafts']))
                 prompt = f"Refine these translations of '{item['original']}':\n{draft_list}"
+                if glossary_text and glossary_for in ['refine', 'all']:
+                    prompt = f"Please use this glossary for context:\n{glossary_text}\n\n{prompt}"
                 payload = {"prompt": prompt, "model": refine_model}
                 refined_text = _api_request("completions", payload, api_base_url).get("choices", [{}])[0].get("text", "").strip()
                 item['node_ref']['#text'] = f"jp_text:::{refined_text or item['original']}"
@@ -171,7 +180,7 @@ def translate_file(**args):
             model_name = args['model_name']
             ensure_model_loaded(model_name, api_base_url, args.get('verbose'))
             for node in nodes_to_translate:
-                translated_text = get_translation(node['#text'], model_name, api_base_url)
+                translated_text = get_translation(node['#text'], model_name, api_base_url, glossary_text=glossary_text)
                 node['#text'] = f"jp_text:::{translated_text or node['#text']}"
                 pbar.update(1)
 
