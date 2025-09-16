@@ -218,5 +218,25 @@ class TestParser(unittest.TestCase):
             deserialize("[action]\n<tag>\n</tag>")
 
 
+    def test_tag_with_hyphen(self):
+        """Tests that tags with hyphens are parsed correctly."""
+        data = """
+[my-action]
+    <my-tag>
+        some-text
+    </my-tag>
+[/my-action]
+"""
+        parsed = deserialize(data)
+        expected = {
+            "my-action": {
+                "my-tag": {
+                    "#text": "some-text"
+                }
+            }
+        }
+        self.assertEqual(parsed, expected)
+
+
 if __name__ == '__main__':
     unittest.main()
