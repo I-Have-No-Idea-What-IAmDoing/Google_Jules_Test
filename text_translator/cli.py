@@ -22,7 +22,6 @@ def main():
     # Configuration arguments
     config_group = parser.add_argument_group('Configuration')
     config_group.add_argument("--api-base-url", default=None, help="Base URL of the oobabooga API.\n(Default: checks OOBABOOGA_API_BASE_URL env var, then http://127.0.0.1:5000/v1)")
-    config_group.add_argument("--checkpoint-frequency", type=int, default=10, help="How often to save a checkpoint.\nSet to 0 to disable. (Default: 10)")
 
     # Verbosity arguments
     verbosity_group = parser.add_mutually_exclusive_group()
@@ -49,9 +48,9 @@ def main():
             "input_path": args.input_file,
             "model_name": args.model,
             "api_base_url": api_url,
-            "checkpoint_freq": args.checkpoint_frequency,
             "verbose": args.verbose,
             "quiet": args.quiet,
+            "output_file": args.output_file,
             "refine_mode": args.refine,
             "draft_model": args.draft_model
         }

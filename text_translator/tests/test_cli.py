@@ -19,10 +19,14 @@ class TestCommandLineInterface(unittest.TestCase):
                 cli.main()
 
         expected_args = {
-            "input_path": "input.txt", "model_name": "test-model",
-            "api_base_url": core.DEFAULT_API_BASE_URL, "checkpoint_freq": 10,
-            "verbose": False, "quiet": False,
-            "refine_mode": False, "draft_model": None
+            "input_path": "input.txt",
+            "model_name": "test-model",
+            "api_base_url": core.DEFAULT_API_BASE_URL,
+            "verbose": False,
+            "quiet": False,
+            "output_file": None,
+            "refine_mode": False,
+            "draft_model": None
         }
         mock_translate_file.assert_called_once_with(**expected_args)
 
