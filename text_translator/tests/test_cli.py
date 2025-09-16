@@ -33,7 +33,9 @@ class TestCommandLineInterface(unittest.TestCase):
                 cli.main()
 
         mock_process_single_file.assert_called_once()
-        # We can do more detailed assertions on the arguments if needed
+        call_args, _ = mock_process_single_file.call_args
+        passed_args_obj = call_args[2]
+        self.assertEqual(passed_args_obj.debug, 0)
 
     @patch('text_translator.cli.process_single_file')
     def test_cli_directory_recursive_by_default(self, mock_process_single_file):
@@ -77,7 +79,7 @@ class TestCommandLineInterface(unittest.TestCase):
         # Check if process_single_file was called only for the top-level file
         self.assertEqual(mock_process_single_file.call_count, 1)
         mock_process_single_file.assert_called_once_with(
-            file1, os.path.join(output_dir, "file1.txt"), unittest.mock.ANY, unittest.mock.ANY
+            file1, os.path.join(output_dir, "file1.txt"), unittest.mock.ANY, unittest.mock.ANY, unittest.mock.ANY
         )
 
     @patch('sys.stderr', new_callable=StringIO)
@@ -106,6 +108,40 @@ class TestCommandLineInterface(unittest.TestCase):
                 cli.main()
 
         self.assertIn(f"Error processing file {input_file}: Core error", mock_stderr.getvalue())
+
+    @patch('text_translator.cli.process_single_file')
+    def test_cli_debug_flag_default(self, mock_process_single_file):
+        """Test the CLI with --debug flag without a value, defaulting to 3."""
+        input_file = os.path.join(self.test_dir, "input.txt")
+        with open(input_file, "w") as f:
+            f.write("test")
+
+        test_args = ["cli.py", input_file, "--model", "test-model", "--debug"]
+        with patch.object(sys, 'argv', test_args):
+            with patch('sys.stdout', new_callable=StringIO):
+                cli.main()
+
+        self.assertTrue(mock_process_single_file.called)
+        call_args, _ = mock_process_single_file.call_args
+        passed_args_obj = call_args[2]
+        self.assertEqual(passed_args_obj.debug, 3)
+
+    @patch('text_translator.cli.process_single_file')
+    def test_cli_debug_flag_with_level(self, mock_process_single_file):
+        """Test the CLI with --debug flag with a specific level."""
+        input_file = os.path.join(self.test_dir, "input.txt")
+        with open(input_file, "w") as f:
+            f.write("test")
+
+        test_args = ["cli.py", input_file, "--model", "test-model", "--debug", "2"]
+        with patch.object(sys, 'argv', test_args):
+            with patch('sys.stdout', new_callable=StringIO):
+                cli.main()
+
+        self.assertTrue(mock_process_single_file.called)
+        call_args, _ = mock_process_single_file.call_args
+        passed_args_obj = call_args[2]
+        self.assertEqual(passed_args_obj.debug, 2)
 
 if __name__ == '__main__':
     unittest.main()

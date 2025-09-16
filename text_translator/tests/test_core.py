@@ -28,7 +28,7 @@ class TestFinalCoreWorkflow(unittest.TestCase):
 
         core.translate_file(**args)
 
-        mock_ensure_model.assert_called_once_with("direct-model", "http://test.url", False)
+        mock_ensure_model.assert_called_once_with("direct-model", "http://test.url", False, debug=0)
         mock_get_translation.assert_called_once()
 
     @patch('os.path.exists', return_value=False)
@@ -73,6 +73,24 @@ class TestFinalCoreWorkflow(unittest.TestCase):
             args = {**self.base_args, "refine_mode": False, "model_name": "direct-model"}
             core.translate_file(**args)
             mock_ensure_model.assert_not_called()
+
+    @patch('os.path.exists', return_value=False)
+    @patch('builtins.open')
+    @patch('translator_lib.core.parser.deserialize')
+    @patch('translator_lib.core.collect_text_nodes')
+    @patch('translator_lib.core.ensure_model_loaded')
+    @patch('translator_lib.core.get_translation')
+    def test_debug_flag_propagation_direct(self, mock_get_translation, mock_ensure_model, mock_collect, mock_deserialize, mock_open, mock_exists):
+        """Test that the debug flag is propagated in direct mode."""
+        mock_collect.side_effect = lambda data, lst: lst.extend([{'#text': 'one'}])
+        args = {**self.base_args, "refine_mode": False, "model_name": "direct-model", "debug": 2}
+
+        core.translate_file(**args)
+
+        mock_ensure_model.assert_called_once_with("direct-model", "http://test.url", False, debug=2)
+        mock_get_translation.assert_called_once()
+        _, kwargs = mock_get_translation.call_args
+        self.assertEqual(kwargs.get('debug'), 2)
 
 if __name__ == '__main__':
     unittest.main()

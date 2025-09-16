@@ -17,6 +17,7 @@ def process_single_file(input_file, output_file, args, api_url, glossary_text):
             "api_base_url": api_url,
             "verbose": args.verbose,
             "quiet": args.quiet,
+            "debug": args.debug,
             "output_file": output_file,
             "refine_mode": args.refine,
             "draft_model": args.draft_model,
@@ -101,6 +102,15 @@ def main():
     glossary_group.add_argument("--glossary-file", help="Path to a glossary file to provide extra context for translation.")
     glossary_group.add_argument("--glossary-text", help="A string containing glossary terms to provide extra context for translation.")
     config_group.add_argument("--glossary-for", choices=['draft', 'refine', 'all'], default='all', help="Model to apply the glossary to. (Default: all)")
+    config_group.add_argument(
+        "--debug",
+        nargs='?',
+        type=int,
+        const=3,
+        default=0,
+        help="Enable debug output. Optionally provide a level (1-3). "
+             "Defaults to 3 if no level is specified."
+    )
 
     # Verbosity arguments
     verbosity_group = parser.add_mutually_exclusive_group()
