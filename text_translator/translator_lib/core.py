@@ -15,6 +15,9 @@ DEFAULT_API_BASE_URL = "http://127.0.0.1:5000/v1"
 # --- API Communication & Model Management ---
 
 def _api_request(endpoint, payload, api_base_url, timeout=60, is_get=False):
+    """
+    Internal helper to send a request to the API, handling exceptions.
+    """
     headers = {"Content-Type": "application/json"}
     try:
         if is_get:
@@ -24,20 +27,26 @@ def _api_request(endpoint, payload, api_base_url, timeout=60, is_get=False):
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
-        # Re-raise as a connection error for unified handling
         raise ConnectionError(f"API request to {endpoint} failed: {e}")
 
-def get_current_model(api_base_url):
-    """Gets the currently loaded model from the API."""
+def ensure_model_loaded(model_name, api_base_url, verbose=False):
+    """
+    Checks if the correct model is loaded on the server and loads it if not.
+
+    Args:
+        model_name (str): The name of the model that should be loaded.
+        api_base_url (str): The base URL of the API.
+        verbose (bool): If True, prints status messages.
+
+    Raises:
+        ConnectionError: If API calls to check or load the model fail.
+    """
     try:
-        response_data = _api_request("models", {}, api_base_url, is_get=True)
-        return response_data.get("data", [{}])[0].get("id")
+        current_model_data = _api_request("models", {}, api_base_url, is_get=True)
+        current_model = current_model_data.get("data", [{}])[0].get("id")
     except (ConnectionError, IndexError, KeyError) as e:
         raise ConnectionError(f"Error getting current model: {e}")
 
-def ensure_model_loaded(model_name, api_base_url, verbose=False):
-    """Checks if the correct model is loaded, and loads it if not."""
-    current_model = get_current_model(api_base_url)
     if current_model != model_name:
         if verbose:
             print(f"Switching model from '{current_model}' to '{model_name}'...")
@@ -50,8 +59,11 @@ def ensure_model_loaded(model_name, api_base_url, verbose=False):
 
 # --- Translation Logic ---
 
-def get_direct_translation(text, model_name, api_base_url):
-    """Gets a single direct translation with retry logic."""
+def get_translation(text, model_name, api_base_url, **kwargs):
+    """
+    Gets a translation for a single piece of text, with retries.
+    This is the simplest translation function, used for drafts and direct mode.
+    """
     payload = {"prompt": f"Translate into English:\n\n{text}", "model": model_name}
     for attempt in range(3):
         try:
@@ -61,12 +73,20 @@ def get_direct_translation(text, model_name, api_base_url):
             if attempt < 2:
                 time.sleep(2 ** attempt)
             else:
-                raise e # Re-raise the final error
+                raise e
     return text
 
-# ... (The rest of the file needs to be updated to use these restored functions) ...
+# --- Data Processing & Workflow ---
 
 def collect_text_nodes(data, nodes_list):
+    """
+    Recursively traverses the data structure to find all text nodes that
+    need translation (non-English and not already processed).
+
+    Args:
+        data (dict or list): The data structure to traverse.
+        nodes_list (list): A list to which references of text nodes will be appended.
+    """
     if isinstance(data, dict):
         for key, value in data.items():
             if key == "#text" and isinstance(value, str):
@@ -82,6 +102,7 @@ def collect_text_nodes(data, nodes_list):
             collect_text_nodes(item, nodes_list)
 
 def cleanup_markers(data):
+    """Recursively removes the 'jp_text:::' processing markers from the data."""
     if isinstance(data, dict):
         for key, value in data.items():
             if key == "#text" and isinstance(value, str) and value.startswith("jp_text:::"):
@@ -93,7 +114,15 @@ def cleanup_markers(data):
             cleanup_markers(item)
 
 # --- Main Orchestrator ---
+
 def translate_file(**args):
+    """
+    The main orchestrator function for the entire translation process.
+    Handles file I/O, batching, model loading, and progress display.
+
+    Args:
+        **args (dict): A dictionary of arguments from the CLI.
+    """
     input_path = args['input_path']
     api_base_url = args.get('api_base_url', DEFAULT_API_BASE_URL)
 
@@ -114,19 +143,22 @@ def translate_file(**args):
 
     with tqdm(total=len(nodes_to_translate), desc="Translating", unit="node", disable=args.get('quiet')) as pbar:
         if args.get('refine_mode'):
-            # Refinement Batch Logic
+            # Refinement Batch Workflow
             draft_model = args['draft_model']
             refine_model = args['model_name']
+            num_drafts = args.get('num_drafts', 6)
 
             ensure_model_loaded(draft_model, api_base_url, args.get('verbose'))
             drafts_data = []
+            pbar.set_description(f"Drafting ({draft_model})")
             for node in nodes_to_translate:
                 original_text = node['#text']
-                drafts = [get_direct_translation(original_text, draft_model, api_base_url) for _ in range(6)]
+                drafts = [get_translation(original_text, draft_model, api_base_url) for _ in range(num_drafts)]
                 drafts_data.append({'original': original_text, 'drafts': drafts, 'node_ref': node})
                 pbar.update(0.5)
 
             ensure_model_loaded(refine_model, api_base_url, args.get('verbose'))
+            pbar.set_description(f"Refining ({refine_model})")
             for item in drafts_data:
                 draft_list = "\n".join(f"{i+1}. ```{d}```" for i, d in enumerate(item['drafts']))
                 prompt = f"Refine these translations of '{item['original']}':\n{draft_list}"
@@ -135,11 +167,11 @@ def translate_file(**args):
                 item['node_ref']['#text'] = f"jp_text:::{refined_text or item['original']}"
                 pbar.update(0.5)
         else:
-            # Direct Batch Logic
+            # Direct Batch Workflow
             model_name = args['model_name']
             ensure_model_loaded(model_name, api_base_url, args.get('verbose'))
             for node in nodes_to_translate:
-                translated_text = get_direct_translation(node['#text'], model_name, api_base_url)
+                translated_text = get_translation(node['#text'], model_name, api_base_url)
                 node['#text'] = f"jp_text:::{translated_text or node['#text']}"
                 pbar.update(1)
 
