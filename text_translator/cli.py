@@ -1,9 +1,10 @@
 import argparse
 import os
 import sys
+from typing import Optional, Any
 from translator_lib.core import translate_file, DEFAULT_API_BASE_URL
 
-def process_single_file(input_file, output_file, args, api_url, glossary_text):
+def process_single_file(input_file: str, output_file: Optional[str], args: argparse.Namespace, api_url: str, glossary_text: Optional[str]) -> None:
     """Processes a single file."""
     try:
         if not args.quiet:
@@ -45,7 +46,7 @@ def process_single_file(input_file, output_file, args, api_url, glossary_text):
     except Exception as e:
         print(f"Error processing file {input_file}: {e}", file=sys.stderr)
 
-def process_directory(args, api_url, glossary_text):
+def process_directory(args: argparse.Namespace, api_url: str, glossary_text: Optional[str]) -> None:
     """Processes all files in a directory."""
     input_dir = args.input_path
     output_dir = args.output
@@ -72,7 +73,7 @@ def process_directory(args, api_url, glossary_text):
                 output_file = os.path.join(output_dir, item)
                 process_single_file(input_file, output_file, args, api_url, glossary_text)
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Translate text in files from Japanese to English. Can process a single file or all files in a directory.",
         formatter_class=argparse.RawTextHelpFormatter

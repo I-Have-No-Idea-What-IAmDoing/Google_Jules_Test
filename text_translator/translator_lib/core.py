@@ -6,15 +6,16 @@ import json
 import random
 from tqdm import tqdm
 from langdetect import detect, LangDetectException
+from typing import Any, Dict, List, Optional, Union
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 from custom_xml_parser import parser
 
-DEFAULT_API_BASE_URL = "http://127.0.0.1:5000/v1"
+DEFAULT_API_BASE_URL: str = "http://127.0.0.1:5000/v1"
 
 # --- API Communication & Model Management ---
 
-def _api_request(endpoint, payload, api_base_url, timeout=60, is_get=False, debug=0):
+def _api_request(endpoint: str, payload: Dict[str, Any], api_base_url: str, timeout: int = 60, is_get: bool = False, debug: int = 0) -> Dict[str, Any]:
     """
     Internal helper to send a request to the API, handling exceptions.
     """
@@ -39,7 +40,7 @@ def _api_request(endpoint, payload, api_base_url, timeout=60, is_get=False, debu
     except requests.exceptions.RequestException as e:
         raise ConnectionError(f"API request to {endpoint} failed: {e}")
 
-def ensure_model_loaded(model_name, api_base_url, verbose=False, debug=0):
+def ensure_model_loaded(model_name: str, api_base_url: str, verbose: bool = False, debug: int = 0) -> None:
     """
     Checks if the correct model is loaded on the server and loads it if not.
 
@@ -70,7 +71,7 @@ def ensure_model_loaded(model_name, api_base_url, verbose=False, debug=0):
 
 # --- Translation Logic ---
 
-def get_translation(text, model_name, api_base_url, glossary_text=None, debug=0, **kwargs):
+def get_translation(text: str, model_name: str, api_base_url: str, glossary_text: Optional[str] = None, debug: int = 0, **kwargs: Any) -> str:
     """
     Gets a translation for a single piece of text, with retries.
     This is the simplest translation function, used for drafts and direct mode.
@@ -99,7 +100,7 @@ def get_translation(text, model_name, api_base_url, glossary_text=None, debug=0,
 
 # --- Data Processing & Workflow ---
 
-def collect_text_nodes(data, nodes_list):
+def collect_text_nodes(data: Union[Dict[str, Any], List[Any]], nodes_list: List[Dict[str, Any]]) -> None:
     """
     Recursively traverses the data structure to find all text nodes that
     need translation (non-English and not already processed).
@@ -122,7 +123,7 @@ def collect_text_nodes(data, nodes_list):
         for item in data:
             collect_text_nodes(item, nodes_list)
 
-def cleanup_markers(data):
+def cleanup_markers(data: Union[Dict[str, Any], List[Any]]) -> None:
     """Recursively removes the 'jp_text:::' processing markers from the data."""
     if isinstance(data, dict):
         for key, value in data.items():
@@ -136,7 +137,7 @@ def cleanup_markers(data):
 
 # --- Main Orchestrator ---
 
-def translate_file(**args):
+def translate_file(**args: Any) -> str:
     """
     The main orchestrator function for the entire translation process.
     Handles file I/O, batching, model loading, and progress display.
@@ -158,7 +159,7 @@ def translate_file(**args):
         content = f.read()
     data_structure = parser.deserialize(content)
 
-    nodes_to_translate = []
+    nodes_to_translate: List[Dict[str, Any]] = []
     collect_text_nodes(data_structure, nodes_to_translate)
 
     if not nodes_to_translate:
@@ -172,8 +173,9 @@ def translate_file(**args):
             refine_model = args['model_name']
             num_drafts = args.get('num_drafts', 6)
 
-            ensure_model_loaded(draft_model, api_base_url, args.get('verbose'), debug=debug_mode)
-            drafts_data = []
+            verbose = args.get('verbose', False)
+            ensure_model_loaded(draft_model, api_base_url, verbose, debug=debug_mode)
+            drafts_data: List[Dict[str, Any]] = []
             pbar.set_description(f"Drafting ({draft_model})")
             for node in nodes_to_translate:
                 original_text = node['#text']
@@ -182,7 +184,8 @@ def translate_file(**args):
                 drafts_data.append({'original': original_text, 'drafts': drafts, 'node_ref': node})
                 pbar.update(0.5)
 
-            ensure_model_loaded(refine_model, api_base_url, args.get('verbose'), debug=debug_mode)
+            verbose = args.get('verbose', False)
+            ensure_model_loaded(refine_model, api_base_url, verbose, debug=debug_mode)
             pbar.set_description(f"Refining ({refine_model})")
             for item in drafts_data:
                 draft_list = "\n".join(f"{i+1}. ```{d}```" for i, d in enumerate(item['drafts']))
@@ -197,7 +200,8 @@ def translate_file(**args):
         else:
             # Direct Batch Workflow
             model_name = args['model_name']
-            ensure_model_loaded(model_name, api_base_url, args.get('verbose'), debug=debug_mode)
+            verbose = args.get('verbose', False)
+            ensure_model_loaded(model_name, api_base_url, verbose, debug=debug_mode)
             for node in nodes_to_translate:
                 translated_text = get_translation(node['#text'], model_name, api_base_url, glossary_text=glossary_text, debug=debug_mode)
                 node['#text'] = f"jp_text:::{translated_text or node['#text']}"
