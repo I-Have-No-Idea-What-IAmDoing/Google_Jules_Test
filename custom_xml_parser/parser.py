@@ -1,16 +1,17 @@
 import re
+from typing import Any, Dict, List, Tuple
 
-def deserialize(text: str) -> dict:
+def deserialize(text: str) -> Dict[str, Any]:
     """
     Deserializes a string in the custom XML-like format into a nested dictionary.
     """
     lines = text.splitlines()
 
-    root = {}
-    dict_stack = [root]
-    tag_stack = []
-    text_buffer = []
-    comment_buffer = []
+    root: Dict[str, Any] = {}
+    dict_stack: List[Dict[str, Any]] = [root]
+    tag_stack: List[Tuple[str, str]] = []
+    text_buffer: List[str] = []
+    comment_buffer: List[str] = []
 
     action_start_re = re.compile(r'^\s*\[([a-zA-Z0-9_]+)\]\s*$')
     action_end_re = re.compile(r'^\s*\[/([a-zA-Z0-9_]+)\]\s*$')
@@ -91,7 +92,7 @@ def deserialize(text: str) -> dict:
     return root
 
 
-def merge(d1: dict, d2: dict) -> dict:
+def merge(d1: Dict[str, Any], d2: Dict[str, Any]) -> Dict[str, Any]:
     """
     Recursively merges two dictionaries.
 
@@ -115,7 +116,7 @@ def merge(d1: dict, d2: dict) -> dict:
     return merged
 
 
-def serialize(data: dict) -> str:
+def serialize(data: Dict[str, Any]) -> str:
     """
     Serializes a nested dictionary into a string in the custom XML-like format.
 
@@ -127,8 +128,8 @@ def serialize(data: dict) -> str:
     """
     return _serialize_recursive(data, 0, True).strip()
 
-def _serialize_recursive(data: dict, level: int, is_action_group: bool) -> str:
-    result = []
+def _serialize_recursive(data: Dict[str, Any], level: int, is_action_group: bool) -> str:
+    result: List[str] = []
     indent = "\t" * level
 
     # Text content should be output first for the current level.
