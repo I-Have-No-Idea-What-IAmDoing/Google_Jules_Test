@@ -3,7 +3,7 @@ import os
 import sys
 from translator_lib.core import translate_file, DEFAULT_API_BASE_URL
 
-def process_single_file(input_file, output_file, args, api_url):
+def process_single_file(input_file, output_file, args, api_url, glossary_text):
     """Processes a single file."""
     try:
         if not args.quiet:
@@ -20,7 +20,9 @@ def process_single_file(input_file, output_file, args, api_url):
             "output_file": output_file,
             "refine_mode": args.refine,
             "draft_model": args.draft_model,
-            "num_drafts": args.num_drafts
+            "num_drafts": args.num_drafts,
+            "glossary_text": glossary_text,
+            "glossary_for": args.glossary_for
         }
 
         translated_content = translate_file(**core_args)
@@ -42,7 +44,7 @@ def process_single_file(input_file, output_file, args, api_url):
     except Exception as e:
         print(f"Error processing file {input_file}: {e}", file=sys.stderr)
 
-def process_directory(args, api_url):
+def process_directory(args, api_url, glossary_text):
     """Processes all files in a directory."""
     input_dir = args.input_path
     output_dir = args.output
@@ -61,13 +63,13 @@ def process_directory(args, api_url):
                 input_file = os.path.join(root, file)
                 relative_path = os.path.relpath(input_file, input_dir)
                 output_file = os.path.join(output_dir, relative_path)
-                process_single_file(input_file, output_file, args, api_url)
+                process_single_file(input_file, output_file, args, api_url, glossary_text)
     else:
         for item in os.listdir(input_dir):
             input_file = os.path.join(input_dir, item)
             if os.path.isfile(input_file):
                 output_file = os.path.join(output_dir, item)
-                process_single_file(input_file, output_file, args, api_url)
+                process_single_file(input_file, output_file, args, api_url, glossary_text)
 
 def main():
     parser = argparse.ArgumentParser(
@@ -95,6 +97,10 @@ def main():
     # Configuration arguments
     config_group = parser.add_argument_group('Configuration')
     config_group.add_argument("--api-base-url", default=None, help="Base URL of the oobabooga API.\n(Default: checks OOBABOOGA_API_BASE_URL env var, then http://127.0.0.1:5000/v1)")
+    glossary_group = config_group.add_mutually_exclusive_group()
+    glossary_group.add_argument("--glossary-file", help="Path to a glossary file to provide extra context for translation.")
+    glossary_group.add_argument("--glossary-text", help="A string containing glossary terms to provide extra context for translation.")
+    config_group.add_argument("--glossary-for", choices=['draft', 'refine', 'all'], default='all', help="Model to apply the glossary to. (Default: all)")
 
     # Verbosity arguments
     verbosity_group = parser.add_mutually_exclusive_group()
@@ -112,13 +118,21 @@ def main():
     # Determine API base URL
     api_url = args.api_base_url or os.environ.get("OOBABOOGA_API_BASE_URL") or DEFAULT_API_BASE_URL
 
+    # --- Glossary Processing ---
+    glossary_text = args.glossary_text
+    if args.glossary_file:
+        if not os.path.exists(args.glossary_file):
+            parser.error(f"Glossary file not found: {args.glossary_file}")
+        with open(args.glossary_file, 'r', encoding='utf-8') as f:
+            glossary_text = f.read()
+
     # --- Path Processing ---
     if os.path.isdir(args.input_path):
         if not args.quiet:
             print(f"Input is a directory. Translating all files in '{args.input_path}'...")
-        process_directory(args, api_url)
+        process_directory(args, api_url, glossary_text)
     elif os.path.isfile(args.input_path):
-        process_single_file(args.input_path, args.output, args, api_url)
+        process_single_file(args.input_path, args.output, args, api_url, glossary_text)
     else:
         parser.error(f"Input path is not a valid file or directory: {args.input_path}")
 
