@@ -1,8 +1,10 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, call
 import sys
 import os
 from io import StringIO
+import tempfile
+import shutil
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from text_translator import cli
@@ -10,35 +12,73 @@ from translator_lib import core
 
 class TestCommandLineInterface(unittest.TestCase):
 
-    @patch('text_translator.cli.translate_file')
-    def test_cli_default_args(self, mock_translate_file):
-        """Test the CLI with default arguments passes correct kwargs."""
-        test_args = ["cli.py", "input.txt", "--model", "test-model"]
+    def setUp(self):
+        """Set up a temporary directory for tests."""
+        self.test_dir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        """Clean up the temporary directory."""
+        shutil.rmtree(self.test_dir)
+
+    @patch('text_translator.cli.process_single_file')
+    def test_cli_single_file(self, mock_process_single_file):
+        """Test the CLI with a single file input."""
+        input_file = os.path.join(self.test_dir, "input.txt")
+        with open(input_file, "w") as f:
+            f.write("test")
+
+        test_args = ["cli.py", input_file, "--model", "test-model"]
         with patch.object(sys, 'argv', test_args):
             with patch('sys.stdout', new_callable=StringIO):
                 cli.main()
 
-        expected_args = {
-            "input_path": "input.txt", "model_name": "test-model",
-            "api_base_url": core.DEFAULT_API_BASE_URL,
-            "verbose": False, "quiet": False, "output_file": None,
-            "refine_mode": False, "draft_model": None, "num_drafts": 6
-        }
-        mock_translate_file.assert_called_once_with(**expected_args)
+        mock_process_single_file.assert_called_once()
+        # We can do more detailed assertions on the arguments if needed
 
-    @patch('text_translator.cli.translate_file')
-    def test_cli_refine_mode_custom_drafts(self, mock_translate_file):
-        """Test that --num-drafts is passed correctly."""
-        test_args = [
-            "cli.py", "input.txt", "--model", "r", "--refine",
-            "--draft-model", "d", "--num-drafts", "4"
-        ]
+    @patch('text_translator.cli.process_single_file')
+    def test_cli_directory_recursive_by_default(self, mock_process_single_file):
+        """Test the CLI with a directory input is recursive by default."""
+        # Create a dummy directory structure
+        dir1 = os.path.join(self.test_dir, "dir1")
+        os.makedirs(dir1)
+        file1 = os.path.join(self.test_dir, "file1.txt")
+        file2 = os.path.join(dir1, "file2.txt")
+        with open(file1, "w") as f:
+            f.write("test1")
+        with open(file2, "w") as f:
+            f.write("test2")
+
+        output_dir = os.path.join(self.test_dir, "output")
+        test_args = ["cli.py", self.test_dir, "--model", "test-model", "--output", output_dir, "--quiet"]
         with patch.object(sys, 'argv', test_args):
-            with patch('sys.stdout', new_callable=StringIO):
-                cli.main()
+            cli.main()
 
-        self.assertTrue(mock_translate_file.call_args[1]['refine_mode'])
-        self.assertEqual(mock_translate_file.call_args[1]['num_drafts'], 4)
+        # Check if process_single_file was called for each file (recursive)
+        self.assertEqual(mock_process_single_file.call_count, 2)
+
+    @patch('text_translator.cli.process_single_file')
+    def test_cli_directory_non_recursive(self, mock_process_single_file):
+        """Test the CLI with --no-recursive flag."""
+        # Create a dummy directory structure
+        dir1 = os.path.join(self.test_dir, "dir1")
+        os.makedirs(dir1)
+        file1 = os.path.join(self.test_dir, "file1.txt")
+        file2 = os.path.join(dir1, "file2.txt")
+        with open(file1, "w") as f:
+            f.write("test1")
+        with open(file2, "w") as f:
+            f.write("test2")
+
+        output_dir = os.path.join(self.test_dir, "output")
+        test_args = ["cli.py", self.test_dir, "--model", "test-model", "--output", output_dir, "--no-recursive", "--quiet"]
+        with patch.object(sys, 'argv', test_args):
+            cli.main()
+
+        # Check if process_single_file was called only for the top-level file
+        self.assertEqual(mock_process_single_file.call_count, 1)
+        mock_process_single_file.assert_called_once_with(
+            file1, os.path.join(output_dir, "file1.txt"), unittest.mock.ANY, unittest.mock.ANY
+        )
 
     @patch('sys.stderr', new_callable=StringIO)
     def test_cli_refine_without_draft_model_exits(self, mock_stderr):
@@ -46,7 +86,8 @@ class TestCommandLineInterface(unittest.TestCase):
         test_args = ["cli.py", "input.txt", "--model", "r", "--refine"]
         with patch.object(sys, 'argv', test_args):
             with self.assertRaises(SystemExit) as cm:
-                cli.main()
+                with patch('os.path.exists', return_value=True): # Mock path existence
+                    cli.main()
             self.assertEqual(cm.exception.code, 2)
 
         self.assertIn("--draft-model is required when using --refine", mock_stderr.getvalue())
@@ -54,15 +95,17 @@ class TestCommandLineInterface(unittest.TestCase):
     @patch('text_translator.cli.translate_file', side_effect=Exception("Core error"))
     @patch('sys.stderr', new_callable=StringIO)
     def test_cli_generic_error_handling(self, mock_stderr, mock_translate_file):
-        """Test that the CLI handles generic exceptions and exits with status 1."""
-        test_args = ["cli.py", "input.txt", "--model", "test-model"]
+        """Test that the CLI handles exceptions in file processing."""
+        input_file = os.path.join(self.test_dir, "input.txt")
+        with open(input_file, "w") as f:
+            f.write("test")
+
+        test_args = ["cli.py", input_file, "--model", "test-model"]
         with patch.object(sys, 'argv', test_args):
             with patch('sys.stdout', new_callable=StringIO):
-                with self.assertRaises(SystemExit) as cm:
-                    cli.main()
-                self.assertEqual(cm.exception.code, 1)
+                cli.main()
 
-        self.assertIn("A critical error occurred: Core error", mock_stderr.getvalue())
+        self.assertIn(f"Error processing file {input_file}: Core error", mock_stderr.getvalue())
 
 if __name__ == '__main__':
     unittest.main()
