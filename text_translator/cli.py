@@ -3,16 +3,88 @@ import os
 import sys
 from translator_lib.core import translate_file, DEFAULT_API_BASE_URL
 
+def process_single_file(input_file, output_file, args, api_url):
+    """Processes a single file."""
+    try:
+        if not args.quiet:
+            print(f"Starting translation for '{input_file}'...")
+            if args.refine:
+                print(f"Using refinement mode with draft model '{args.draft_model}' and refiner '{args.model}'.")
+
+        core_args = {
+            "input_path": input_file,
+            "model_name": args.model,
+            "api_base_url": api_url,
+            "verbose": args.verbose,
+            "quiet": args.quiet,
+            "output_file": output_file,
+            "refine_mode": args.refine,
+            "draft_model": args.draft_model,
+            "num_drafts": args.num_drafts
+        }
+
+        translated_content = translate_file(**core_args)
+
+        if output_file:
+            os.makedirs(os.path.dirname(output_file), exist_ok=True)
+            with open(output_file, 'w', encoding='utf-8') as f:
+                f.write(translated_content)
+            if not args.quiet:
+                print(f"\nTranslation complete. Output saved to {output_file}")
+        else:
+            if args.quiet:
+                print(translated_content)
+            else:
+                print("\n--- Translated Content ---")
+                print(translated_content)
+                print("--------------------------")
+
+    except Exception as e:
+        print(f"Error processing file {input_file}: {e}", file=sys.stderr)
+
+def process_directory(args, api_url):
+    """Processes all files in a directory."""
+    input_dir = args.input_path
+    output_dir = args.output
+
+    if output_dir:
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir, exist_ok=True)
+    else:
+        output_dir = f"{os.path.basename(input_dir)}_translated"
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir, exist_ok=True)
+
+    if args.recursive:
+        for root, _, files in os.walk(input_dir):
+            for file in files:
+                input_file = os.path.join(root, file)
+                relative_path = os.path.relpath(input_file, input_dir)
+                output_file = os.path.join(output_dir, relative_path)
+                process_single_file(input_file, output_file, args, api_url)
+    else:
+        for item in os.listdir(input_dir):
+            input_file = os.path.join(input_dir, item)
+            if os.path.isfile(input_file):
+                output_file = os.path.join(output_dir, item)
+                process_single_file(input_file, output_file, args, api_url)
+
 def main():
     parser = argparse.ArgumentParser(
-        description="Translate text in a custom XML-like file from Japanese to English.",
+        description="Translate text in files from Japanese to English. Can process a single file or all files in a directory.",
         formatter_class=argparse.RawTextHelpFormatter
     )
 
     # Core arguments
-    parser.add_argument("input_file", help="Path to the input file to be translated.")
+    parser.add_argument("input_path", help="Path to the input file or directory to be translated.")
     parser.add_argument("--model", required=True, help="Name of the main translation model to use (or the refiner model in --refine mode).")
-    parser.add_argument("--output_file", help="Optional. Path to save the translated output file.")
+    parser.add_argument("--output", help="Optional. Path to the output file or directory. If not provided, a default will be used.")
+
+    # Directory processing options
+    dir_group = parser.add_argument_group('Directory Options')
+    dir_group.add_argument('--recursive', dest='recursive', action='store_true', help="Process directories recursively. (Default)")
+    dir_group.add_argument('--no-recursive', dest='recursive', action='store_false', help="Disable recursive processing.")
+    parser.set_defaults(recursive=True)
 
     # Refinement mode arguments
     refine_group = parser.add_argument_group('Refinement Mode')
@@ -31,50 +103,24 @@ def main():
 
     args = parser.parse_args()
 
-    # Validate arguments
+    # --- Argument Validation ---
+    if not os.path.exists(args.input_path):
+        parser.error(f"Input path does not exist: {args.input_path}")
     if args.refine and not args.draft_model:
         parser.error("--draft-model is required when using --refine.")
 
     # Determine API base URL
     api_url = args.api_base_url or os.environ.get("OOBABOOGA_API_BASE_URL") or DEFAULT_API_BASE_URL
 
-    try:
+    # --- Path Processing ---
+    if os.path.isdir(args.input_path):
         if not args.quiet:
-            print(f"Starting translation for '{args.input_file}'...")
-            if args.refine:
-                print(f"Using refinement mode with draft model '{args.draft_model}' and refiner '{args.model}'.")
-
-        # Prepare arguments for the core library function
-        core_args = {
-            "input_path": args.input_file,
-            "model_name": args.model,
-            "api_base_url": api_url,
-            "verbose": args.verbose,
-            "quiet": args.quiet,
-            "output_file": args.output_file,
-            "refine_mode": args.refine,
-            "draft_model": args.draft_model,
-            "num_drafts": args.num_drafts
-        }
-
-        translated_content = translate_file(**core_args)
-
-        if args.output_file:
-            with open(args.output_file, 'w', encoding='utf-8') as f:
-                f.write(translated_content)
-            if not args.quiet:
-                print(f"\nTranslation complete. Output saved to {args.output_file}")
-        else:
-            if args.quiet:
-                print(translated_content)
-            else:
-                print("\n--- Translated Content ---")
-                print(translated_content)
-                print("--------------------------")
-
-    except Exception as e:
-        print(f"A critical error occurred: {e}", file=sys.stderr)
-        sys.exit(1)
+            print(f"Input is a directory. Translating all files in '{args.input_path}'...")
+        process_directory(args, api_url)
+    elif os.path.isfile(args.input_path):
+        process_single_file(args.input_path, args.output, args, api_url)
+    else:
+        parser.error(f"Input path is not a valid file or directory: {args.input_path}")
 
 if __name__ == "__main__":
     main()
