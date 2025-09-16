@@ -18,6 +18,7 @@ def main():
     refine_group = parser.add_argument_group('Refinement Mode')
     refine_group.add_argument("--refine", action="store_true", help="Enable refinement mode, which generates multiple drafts and refines them.")
     refine_group.add_argument("--draft-model", help="The model to use for generating draft translations. Required if --refine is used.")
+    refine_group.add_argument("--num-drafts", type=int, default=6, help="Number of drafts to generate in refinement mode. (Default: 6)")
 
     # Configuration arguments
     config_group = parser.add_argument_group('Configuration')
@@ -52,7 +53,8 @@ def main():
             "quiet": args.quiet,
             "output_file": args.output_file,
             "refine_mode": args.refine,
-            "draft_model": args.draft_model
+            "draft_model": args.draft_model,
+            "num_drafts": args.num_drafts
         }
 
         translated_content = translate_file(**core_args)

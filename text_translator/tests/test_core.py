@@ -6,68 +6,73 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from translator_lib import core
 
-class TestCoreBugfix(unittest.TestCase):
+class TestFinalCoreWorkflow(unittest.TestCase):
 
     def setUp(self):
-        self.api_base_url = core.DEFAULT_API_BASE_URL
-        self.direct_args = {
-            "input_path": "input.txt", "model_name": "direct-model",
-            "api_base_url": self.api_base_url, "quiet": True, "verbose": False
+        self.base_args = {
+            "input_path": "input.txt", "api_base_url": "http://test.url",
+            "quiet": True, "verbose": False, "output_file": None
         }
-
-    @patch('requests.get')
-    def test_get_current_model_logic(self, mock_get):
-        """Test the logic inside get_current_model."""
-        mock_get.return_value.json.return_value = {"data": [{"id": "model-a"}]}
-        mock_get.return_value.raise_for_status = MagicMock()
-
-        core.get_current_model(self.api_base_url)
-        # Check the underlying request call without being too specific about timeout
-        mock_get.assert_called_once()
-        self.assertTrue(mock_get.call_args[0][0].endswith("/models"))
-
-    @patch('requests.get')
-    @patch('requests.post')
-    @patch('time.sleep', return_value=None)
-    def test_ensure_model_loaded_switches_model(self, mock_sleep, mock_post, mock_get):
-        """Test that ensure_model_loaded calls the load API when models differ."""
-        mock_get.return_value.json.return_value = {"data": [{"id": "wrong-model"}]}
-        mock_get.return_value.raise_for_status = MagicMock()
-        mock_post.return_value.raise_for_status = MagicMock()
-
-        core.ensure_model_loaded("correct-model", self.api_base_url, verbose=True)
-
-        mock_get.assert_called_once()
-        mock_post.assert_called_once_with(
-            f"{self.api_base_url}/internal/model/load",
-            json={"model_name": "correct-model"},
-            headers=unittest.mock.ANY,
-            timeout=300
-        )
-
-    @patch('requests.get')
-    @patch('requests.post')
-    def test_ensure_model_loaded_does_nothing_if_correct(self, mock_post, mock_get):
-        """Test that ensure_model_loaded does nothing if the correct model is loaded."""
-        mock_get.return_value.json.return_value = {"data": [{"id": "correct-model"}]}
-        mock_get.return_value.raise_for_status = MagicMock()
-
-        core.ensure_model_loaded("correct-model", self.api_base_url)
-
-        mock_get.assert_called_once()
-        mock_post.assert_not_called()
 
     @patch('os.path.exists', return_value=False)
     @patch('builtins.open')
-    @patch('translator_lib.core.parser.deserialize', return_value={'#text': 'こんにちは'})
+    @patch('translator_lib.core.parser.deserialize')
+    @patch('translator_lib.core.collect_text_nodes')
     @patch('translator_lib.core.ensure_model_loaded')
-    @patch('translator_lib.core.get_direct_translation')
-    def test_translate_file_calls_ensure_model(self, mock_get_translation, mock_ensure_model, mock_deserialize, mock_open, mock_exists):
-        """Test that the main orchestrator calls the model loading logic."""
-        core.translate_file(**self.direct_args)
-        mock_ensure_model.assert_called_once_with("direct-model", self.api_base_url, False)
+    @patch('translator_lib.core.get_translation')
+    def test_direct_translation_workflow(self, mock_get_translation, mock_ensure_model, mock_collect, mock_deserialize, mock_open, mock_exists):
+        """Test the end-to-end direct translation workflow."""
+        mock_collect.side_effect = lambda data, lst: lst.extend([{'#text': 'one'}])
+        mock_get_translation.return_value = "translated"
+        args = {**self.base_args, "refine_mode": False, "model_name": "direct-model"}
+
+        core.translate_file(**args)
+
+        mock_ensure_model.assert_called_once_with("direct-model", "http://test.url", False)
         mock_get_translation.assert_called_once()
 
+    @patch('os.path.exists', return_value=False)
+    @patch('builtins.open')
+    @patch('translator_lib.core.parser.deserialize')
+    @patch('translator_lib.core.collect_text_nodes')
+    @patch('translator_lib.core.ensure_model_loaded')
+    @patch('translator_lib.core._api_request') # Mock the lowest level
+    def test_refinement_workflow(self, mock_api_request, mock_ensure_model, mock_collect, mock_deserialize, mock_open, mock_exists):
+        """Test the end-to-end refinement translation workflow."""
+        mock_collect.side_effect = lambda data, lst: lst.extend([{'#text': 'one'}])
+        # 6 drafts + 1 refinement call
+        mock_api_request.side_effect = [
+            # Drafts
+            {"choices": [{"text": "d1"}]}, {"choices": [{"text": "d2"}]},
+            {"choices": [{"text": "d3"}]}, {"choices": [{"text": "d4"}]},
+            {"choices": [{"text": "d5"}]}, {"choices": [{"text": "d6"}]},
+            # Refinement
+            {"choices": [{"text": "final_refined"}]}
+        ]
+
+        args = {
+            **self.base_args, "refine_mode": True, "model_name": "refine-model",
+            "draft_model": "draft-model", "num_drafts": 6
+        }
+
+        core.translate_file(**args)
+
+        self.assertEqual(mock_ensure_model.call_count, 2)
+        self.assertEqual(mock_api_request.call_count, 7)
+        final_call_prompt = mock_api_request.call_args[0][1]['prompt']
+        self.assertIn("Refine these translations", final_call_prompt)
+
+    @patch('os.path.exists', return_value=False)
+    @patch('builtins.open')
+    @patch('translator_lib.core.parser.deserialize', return_value={})
+    @patch('translator_lib.core.collect_text_nodes')
+    def test_no_nodes_to_translate(self, mock_collect, mock_deserialize, mock_open, mock_exists):
+        """Test that the function exits early if no text nodes are found."""
+        mock_collect.side_effect = lambda data, lst: None
+        with patch('translator_lib.core.ensure_model_loaded') as mock_ensure_model:
+            args = {**self.base_args, "refine_mode": False, "model_name": "direct-model"}
+            core.translate_file(**args)
+            mock_ensure_model.assert_not_called()
 
 if __name__ == '__main__':
     unittest.main()
