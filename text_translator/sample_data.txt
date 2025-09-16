@@ -1,0 +1,16 @@
+[Greeting]
+    <Message>
+        # This is a comment
+        text こんにちは、世界！
+    </Message>
+[/Greeting]
+
+[WeatherReport]
+    <Today>
+        location 東京
+        <Forecast>
+            # Weather status
+            text 今日の天気は晴れです。
+        </Forecast>
+    </Today>
+[/WeatherReport]
