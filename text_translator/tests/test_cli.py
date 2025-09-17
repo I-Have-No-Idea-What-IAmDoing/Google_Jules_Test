@@ -143,5 +143,22 @@ class TestCommandLineInterface(unittest.TestCase):
         passed_args_obj = call_args[2]
         self.assertEqual(passed_args_obj.debug, 2)
 
+    @patch('text_translator.cli.process_single_file')
+    def test_cli_reasoning_for_argument(self, mock_process_single_file):
+        """Test the CLI with the --reasoning-for argument."""
+        input_file = os.path.join(self.test_dir, "input.txt")
+        with open(input_file, "w") as f:
+            f.write("test")
+
+        test_args = ["cli.py", input_file, "--model", "test-model", "--reasoning-for", "main"]
+        with patch.object(sys, 'argv', test_args):
+            with patch('sys.stdout', new_callable=StringIO):
+                cli.main()
+
+        self.assertTrue(mock_process_single_file.called)
+        call_args, _ = mock_process_single_file.call_args
+        passed_args_obj = call_args[2]
+        self.assertEqual(passed_args_obj.reasoning_for, "main")
+
 if __name__ == '__main__':
     unittest.main()
