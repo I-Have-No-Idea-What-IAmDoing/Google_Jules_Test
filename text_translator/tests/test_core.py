@@ -35,29 +35,32 @@ class TestFinalCoreWorkflow(unittest.TestCase):
     @patch('builtins.open')
     @patch('translator_lib.core.parser.deserialize')
     @patch('translator_lib.core.collect_text_nodes')
-    @patch('translator_lib.core.ensure_model_loaded')
     @patch('translator_lib.core._api_request') # Mock the lowest level
-    def test_refinement_workflow(self, mock_api_request, mock_ensure_model, mock_collect, mock_deserialize, mock_open, mock_exists):
+    @patch('time.sleep') # Mock time.sleep to speed up tests
+    def test_refinement_workflow(self, mock_sleep, mock_api_request, mock_collect, mock_deserialize, mock_open, mock_exists):
         """Test the end-to-end refinement translation workflow."""
         mock_collect.side_effect = lambda data, lst: lst.extend([{'#text': 'one'}])
-        # 6 drafts + 1 refinement call
+
         mock_api_request.side_effect = [
-            # Drafts
+            # ensure_model_loaded for draft-model
+            {"model_name": "initial-model"}, # get current model
+            {"result": "success"},          # load draft-model
+            # get_translation calls for drafts
             {"choices": [{"text": "d1"}]}, {"choices": [{"text": "d2"}]},
-            {"choices": [{"text": "d3"}]}, {"choices": [{"text": "d4"}]},
-            {"choices": [{"text": "d5"}]}, {"choices": [{"text": "d6"}]},
-            # Refinement
+            # ensure_model_loaded for refine-model
+            {"model_name": "draft-model"},   # get current model
+            {"result": "success"},          # load refine-model
+            # refinement call
             {"choices": [{"text": "final_refined"}]}
         ]
 
         args = {
             **self.base_args, "refine_mode": True, "model_name": "refine-model",
-            "draft_model": "draft-model", "num_drafts": 6
+            "draft_model": "draft-model", "num_drafts": 2
         }
 
         core.translate_file(**args)
 
-        self.assertEqual(mock_ensure_model.call_count, 2)
         self.assertEqual(mock_api_request.call_count, 7)
         final_call_prompt = mock_api_request.call_args[0][1]['prompt']
         self.assertIn("Refine these translations", final_call_prompt)
@@ -196,6 +199,33 @@ class TestFinalCoreWorkflow(unittest.TestCase):
 
         final_call_prompt = mock_api_request.call_args[0][1]['prompt']
         self.assertIn("First, provide a step-by-step reasoning", final_call_prompt)
+
+class TestModelLoading(unittest.TestCase):
+
+    @patch('translator_lib.core._api_request')
+    def test_ensure_model_loaded_already_loaded(self, mock_api_request):
+        """Test ensure_model_loaded when the model is already loaded."""
+        mock_api_request.return_value = {"model_name": "test-model"}
+
+        core.ensure_model_loaded("test-model", "http://test.url")
+
+        mock_api_request.assert_called_once_with("internal/model/info", {}, "http://test.url", is_get=True, debug=0)
+
+    @patch('translator_lib.core._api_request')
+    def test_ensure_model_loaded_needs_loading(self, mock_api_request):
+        """Test ensure_model_loaded when a different model is loaded."""
+        mock_api_request.side_effect = [
+            {"model_name": "other-model"},  # First call for info
+            {"result": "success"}          # Second call for load
+        ]
+
+        core.ensure_model_loaded("test-model", "http://test.url")
+
+        self.assertEqual(mock_api_request.call_count, 2)
+        mock_api_request.assert_has_calls([
+            call("internal/model/info", {}, "http://test.url", is_get=True, debug=0),
+            call("internal/model/load", {"model_name": "test-model"}, "http://test.url", timeout=300, debug=0)
+        ])
 
 if __name__ == '__main__':
     unittest.main()

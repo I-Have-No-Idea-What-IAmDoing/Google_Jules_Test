@@ -54,9 +54,9 @@ def ensure_model_loaded(model_name: str, api_base_url: str, verbose: bool = Fals
         ConnectionError: If API calls to check or load the model fail.
     """
     try:
-        current_model_data = _api_request("models", {}, api_base_url, is_get=True, debug=debug)
-        current_model = current_model_data.get("data", [{}])[0].get("id")
-    except (ConnectionError, IndexError, KeyError) as e:
+        current_model_data = _api_request("internal/model/info", {}, api_base_url, is_get=True, debug=debug)
+        current_model = current_model_data.get("model_name")
+    except (ConnectionError, KeyError) as e:
         raise ConnectionError(f"Error getting current model: {e}")
 
     if current_model != model_name:
