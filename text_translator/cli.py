@@ -24,7 +24,8 @@ def process_single_file(input_file: str, output_file: Optional[str], args: argpa
             "draft_model": args.draft_model,
             "num_drafts": args.num_drafts,
             "glossary_text": glossary_text,
-            "glossary_for": args.glossary_for
+            "glossary_for": args.glossary_for,
+            "reasoning_for": args.reasoning_for
         }
 
         translated_content = translate_file(**core_args)
@@ -103,6 +104,7 @@ def main() -> None:
     glossary_group.add_argument("--glossary-file", help="Path to a glossary file to provide extra context for translation.")
     glossary_group.add_argument("--glossary-text", help="A string containing glossary terms to provide extra context for translation.")
     config_group.add_argument("--glossary-for", choices=['draft', 'refine', 'all'], default='all', help="Model to apply the glossary to. (Default: all)")
+    config_group.add_argument("--reasoning-for", choices=['draft', 'refine', 'main', 'all'], default=None, help="Enable reasoning for specific models (main, draft, refine, or all).")
     config_group.add_argument(
         "--debug",
         nargs='?',
