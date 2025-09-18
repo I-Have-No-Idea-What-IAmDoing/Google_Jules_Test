@@ -160,5 +160,23 @@ class TestCommandLineInterface(unittest.TestCase):
         passed_args_obj = call_args[2]
         self.assertEqual(passed_args_obj.reasoning_for, "main")
 
+    @patch('text_translator.cli.process_single_file')
+    def test_cli_line_by_line_flag(self, mock_process_single_file):
+        """Test the CLI with the --line-by-line flag."""
+        input_file = os.path.join(self.test_dir, "input.txt")
+        with open(input_file, "w") as f:
+            f.write("test")
+
+        test_args = ["cli.py", input_file, "--model", "test-model", "--line-by-line"]
+        with patch.object(sys, 'argv', test_args):
+            with patch('sys.stdout', new_callable=StringIO):
+                cli.main()
+
+        self.assertTrue(mock_process_single_file.called)
+        call_args, _ = mock_process_single_file.call_args
+        passed_args_obj = call_args[2]
+        self.assertTrue(passed_args_obj.line_by_line)
+
+
 if __name__ == '__main__':
     unittest.main()
