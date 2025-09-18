@@ -46,12 +46,13 @@ class TestFinalCoreWorkflow(unittest.TestCase):
             {"model_name": "initial-model"}, # get current model
             {"result": "success"},          # load draft-model
             # get_translation calls for drafts
-            {"choices": [{"text": "d1"}]}, {"choices": [{"text": "d2"}]},
+            {"choices": [{"text": "This is a valid draft translation."}]},
+            {"choices": [{"text": "This is another valid draft."}]},
             # ensure_model_loaded for refine-model
             {"model_name": "draft-model"},   # get current model
             {"result": "success"},          # load refine-model
             # refinement call
-            {"choices": [{"text": "final_refined"}]}
+            {"choices": [{"text": "This is the final refined output."}]}
         ]
 
         args = {
@@ -131,7 +132,8 @@ class TestFinalCoreWorkflow(unittest.TestCase):
             use_reasoning=True
         )
 
-        self.assertEqual(result, "This is just the translation.")
+        self.assertEqual(result, "original")
+        self.assertEqual(mock_api_request.call_count, 3)
 
     @patch('os.path.exists', return_value=False)
     @patch('builtins.open')

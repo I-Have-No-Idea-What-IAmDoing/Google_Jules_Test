@@ -71,6 +71,45 @@ def ensure_model_loaded(model_name: str, api_base_url: str, verbose: bool = Fals
 
 # --- Translation Logic ---
 
+def is_translation_valid(original_text: str, translated_text: str, debug: int = 0) -> bool:
+    """
+    Validates the translated text against a set of heuristics.
+    """
+    # 1. Check for empty or whitespace-only translation
+    if not translated_text.strip():
+        if debug >= 1: print(f"--- DEBUG (L1): Validation failed: Translation is empty.", file=sys.stderr)
+        return False
+
+    # 2. Check for identity with the original text
+    if translated_text.strip() == original_text.strip():
+        if debug >= 1: print(f"--- DEBUG (L1): Validation failed: Translation is identical to original.", file=sys.stderr)
+        return False
+
+    # 3. Check for common model refusal phrases
+    refusal_phrases = ["i'm sorry", "i cannot", "i am unable", "as an ai"]
+    if any(phrase in translated_text.lower() for phrase in refusal_phrases):
+        if debug >= 1: print(f"--- DEBUG (L1): Validation failed: Translation contains a refusal phrase.", file=sys.stderr)
+        return False
+
+    # 4. Check if the translation is in English
+    try:
+        lang = detect(translated_text)
+        if lang != 'en':
+            if debug >= 1: print(f"--- DEBUG (L1): Validation failed: Translation is not in English (detected: {lang}).", file=sys.stderr)
+            return False
+    except LangDetectException:
+        # If language detection fails, assume it's valid to avoid false positives
+        if debug >= 2: print(f"--- DEBUG (L2): Language detection failed. Assuming valid.", file=sys.stderr)
+        pass
+
+    # 5. Check if the translation contains the original text (for longer strings)
+    # This is a strong indicator of the model simply repeating the input.
+    if len(original_text) > 15 and original_text in translated_text:
+        if debug >= 1: print(f"--- DEBUG (L1): Validation failed: Translation contains original text.", file=sys.stderr)
+        return False
+
+    return True
+
 def get_translation(text: str, model_name: str, api_base_url: str, glossary_text: Optional[str] = None, debug: int = 0, use_reasoning: bool = False, **kwargs: Any) -> str:
     """
     Gets a translation for a single piece of text, with retries.
@@ -103,10 +142,17 @@ def get_translation(text: str, model_name: str, api_base_url: str, glossary_text
                     translated_text = translated_text.strip()
                 else:
                     if debug >= 1:
-                        print(f"--- DEBUG (L1): Reasoning mode enabled, but 'Translation:' marker not found in response. Returning full response.", file=sys.stderr)
-                    translated_text = full_response
+                        print(f"--- DEBUG (L1): Reasoning mode enabled, but 'Translation:' marker not found. Retrying...", file=sys.stderr)
+                    time.sleep(2 ** attempt)
+                    continue
             else:
                 translated_text = full_response
+
+            if not is_translation_valid(text, translated_text, debug):
+                if debug >= 1:
+                    print(f"--- DEBUG (L1): Translation failed validation. Retrying... (Attempt {attempt + 1}/3)", file=sys.stderr)
+                time.sleep(2 ** attempt)
+                continue
 
             if debug >= 1:
                 print(f"--- DEBUG (L1): Translation Result ---\n{translated_text}\n------------------------------------", file=sys.stderr)
