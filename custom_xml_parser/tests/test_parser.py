@@ -238,5 +238,23 @@ class TestParser(unittest.TestCase):
         self.assertEqual(parsed, expected)
 
 
+    def test_round_trip_for_root_comments(self):
+        """Tests that root-level comments are preserved in a deserialize-serialize round trip."""
+        comment_only_string = "# line 1\n# line 2"
+        deserialized = deserialize(comment_only_string)
+        self.assertEqual(deserialized, {"#comments": ["line 1", "line 2"]})
+
+        serialized = serialize(deserialized)
+        # The bug will cause `serialized` to be an empty string.
+        # We expect the comments to be preserved.
+        # Normalizing by deserializing again is a robust way to check for equivalence.
+        reserialized_data = deserialize(serialized)
+        self.assertEqual(deserialized, reserialized_data)
+
+        # Also check the string output directly, accounting for formatting variations.
+        self.assertIn("# line 1", serialized)
+        self.assertIn("# line 2", serialized)
+
+
 if __name__ == '__main__':
     unittest.main()
