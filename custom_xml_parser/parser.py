@@ -159,11 +159,18 @@ def _serialize_recursive(data: Dict[str, Any], level: int, is_action_group: bool
         result.append(_serialize_recursive(value, level + 1, False))
         result.append(f"{indent}{close_tag}")
 
-    # Finally, handle any trailing comments associated with the current dictionary context.
-    if "#comments" in data and level > -1: # A simple way to handle root comments without special casing
-        # This logic is tricky. Let's simplify and only print comments before tags.
-        # Trailing comments in the root dict will be handled by the loop above if they are attached to a tag.
-        pass
+    # Finally, handle any comments associated with the current dictionary context.
+    if "#comments" in data:
+        # This logic handles comments that are not attached to a specific child tag,
+        # such as root-level comments or trailing comments within a block.
+        # We need to avoid re-printing comments that are already associated with a child tag.
+        # The current implementation of comment deserialization associates comments with the *next* tag.
+        # Therefore, we only need to print comments here if they are not followed by a tag.
+        # A simple heuristic is to check if there are any non-comment children.
+        has_child_tags = any(not k.startswith("#") for k in data)
+        if not has_child_tags:
+            for comment in data["#comments"]:
+                result.append(f"{indent}# {comment}")
 
 
     return "\n".join(result)
