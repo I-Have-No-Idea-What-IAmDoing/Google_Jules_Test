@@ -137,9 +137,10 @@ def serialize(data: Dict[str, Any]) -> str:
     Returns:
         A string in the custom format.
     """
-    return _serialize_recursive(data, 0, True).strip()
+    # Use a set to track comments that have already been serialized to prevent duplication.
+    return _serialize_recursive(data, 0, True, set()).strip()
 
-def _serialize_recursive(data: Dict[str, Any], level: int, is_action_group: bool) -> str:
+def _serialize_recursive(data: Dict[str, Any], level: int, is_action_group: bool, handled_comments: set) -> str:
     result: List[str] = []
     indent = "\t" * level
 
@@ -158,30 +159,27 @@ def _serialize_recursive(data: Dict[str, Any], level: int, is_action_group: bool
             continue
 
         # Comments for the child tag come before the tag itself.
+        # These are "header" comments.
         if "#comments" in value:
             for comment in value["#comments"]:
-                result.append(f"{indent}# {comment}")
+                if comment not in handled_comments:
+                    result.append(f"{indent}# {comment}")
+                    handled_comments.add(comment)
 
         # Determine tag type based on whether we are at the top level of the structure.
         open_tag, close_tag = (f"[{key}]", f"[/{key}]") if is_action_group else (f"<{key}>", f"</{key}>")
 
         result.append(f"{indent}{open_tag}")
         # ALL recursive calls are for nested tags, which are never action groups.
-        result.append(_serialize_recursive(value, level + 1, False))
+        result.append(_serialize_recursive(value, level + 1, False, handled_comments))
         result.append(f"{indent}{close_tag}")
 
     # Finally, handle any comments associated with the current dictionary context.
+    # These are "trailing" comments that appear after all child tags.
     if "#comments" in data:
-        # This logic handles comments that are not attached to a specific child tag,
-        # such as root-level comments or trailing comments within a block.
-        # We need to avoid re-printing comments that are already associated with a child tag.
-        # The current implementation of comment deserialization associates comments with the *next* tag.
-        # Therefore, we only need to print comments here if they are not followed by a tag.
-        # A simple heuristic is to check if there are any non-comment children.
-        has_child_tags = any(not k.startswith("#") for k in data)
-        if not has_child_tags:
-            for comment in data["#comments"]:
+        for comment in data["#comments"]:
+            if comment not in handled_comments:
                 result.append(f"{indent}# {comment}")
-
+                handled_comments.add(comment)
 
     return "\n".join(result)
