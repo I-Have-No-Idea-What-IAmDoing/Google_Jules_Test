@@ -178,5 +178,90 @@ class TestCommandLineInterface(unittest.TestCase):
         self.assertTrue(passed_args_obj.line_by_line)
 
 
+    @patch('text_translator.cli.translate_file', return_value="translated content")
+    def test_process_single_file_prints_to_stdout(self, mock_translate_file):
+        """Test that process_single_file prints to stdout if no output_file is given."""
+        input_file = os.path.join(self.test_dir, "input.txt")
+        with open(input_file, "w") as f: f.write("test")
+
+        args = unittest.mock.Mock(quiet=False)
+
+        with patch('sys.stdout', new_callable=StringIO) as mock_stdout:
+            cli.process_single_file(input_file, None, args, "url", None)
+            self.assertIn("translated content", mock_stdout.getvalue())
+
+    @patch('text_translator.cli.translate_file', return_value="translated content")
+    def test_process_single_file_refine_mode_verbose(self, mock_translate_file):
+        """Test the verbose output for refine mode."""
+        input_file = os.path.join(self.test_dir, "input.txt")
+        with open(input_file, "w") as f: f.write("test")
+
+        args = unittest.mock.Mock(quiet=False, refine=True, draft_model="d", model="r")
+
+        with patch('sys.stdout', new_callable=StringIO) as mock_stdout:
+            cli.process_single_file(input_file, "output.txt", args, "url", None)
+            self.assertIn("Using refinement mode", mock_stdout.getvalue())
+
+    @patch('text_translator.cli.process_single_file')
+    def test_process_directory_creates_default_output(self, mock_process):
+        """Test that process_directory creates a default output directory if none is specified."""
+        input_file = os.path.join(self.test_dir, "input.txt")
+        with open(input_file, "w") as f: f.write("test")
+
+        args = unittest.mock.Mock(input_path=self.test_dir, output=None, recursive=False)
+
+        cli.process_directory(args, "url", None)
+
+        expected_output_dir = f"{os.path.basename(self.test_dir)}_translated"
+        self.assertTrue(os.path.exists(expected_output_dir))
+        shutil.rmtree(expected_output_dir)
+
+    @patch('sys.stderr', new_callable=StringIO)
+    def test_main_input_path_not_found(self, mock_stderr):
+        """Test that main exits if the input path does not exist."""
+        test_args = ["cli.py", "nonexistent.txt", "--model", "m"]
+        with patch.object(sys, 'argv', test_args):
+            with self.assertRaises(SystemExit):
+                cli.main()
+        self.assertIn("Input path does not exist", mock_stderr.getvalue())
+
+    @patch('sys.stderr', new_callable=StringIO)
+    def test_main_glossary_file_not_found(self, mock_stderr):
+        """Test that main exits if the glossary file does not exist."""
+        input_file = os.path.join(self.test_dir, "input.txt")
+        with open(input_file, "w") as f: f.write("test")
+        test_args = ["cli.py", input_file, "--model", "m", "--glossary-file", "nonexistent.txt"]
+        with patch.object(sys, 'argv', test_args):
+            with self.assertRaises(SystemExit):
+                cli.main()
+        self.assertIn("Glossary file not found", mock_stderr.getvalue())
+
+    @patch('text_translator.cli.process_single_file')
+    def test_main_api_url_from_env(self, mock_process):
+        """Test that the API URL is taken from the environment variable."""
+        input_file = os.path.join(self.test_dir, "input.txt")
+        with open(input_file, "w") as f: f.write("test")
+        test_args = ["cli.py", input_file, "--model", "m"]
+        with patch.dict(os.environ, {'OOBABOOGA_API_BASE_URL': 'http://env.url'}):
+            with patch.object(sys, 'argv', test_args):
+                cli.main()
+
+        mock_process.assert_called_once()
+        # The api_url is the 4th argument to process_single_file
+        self.assertEqual(mock_process.call_args[0][3], 'http://env.url')
+
+    @patch('sys.stderr', new_callable=StringIO)
+    def test_main_invalid_input_path(self, mock_stderr):
+        """Test that main exits if the input path is not a file or directory."""
+        input_path = "some_invalid_path"
+        test_args = ["cli.py", input_path, "--model", "m"]
+        with patch.object(sys, 'argv', test_args):
+            with patch('os.path.exists', return_value=True):
+                with patch('os.path.isdir', return_value=False):
+                    with patch('os.path.isfile', return_value=False):
+                        with self.assertRaises(SystemExit):
+                            cli.main()
+        self.assertIn("Input path is not a valid file or directory", mock_stderr.getvalue())
+
 if __name__ == '__main__':
     unittest.main()

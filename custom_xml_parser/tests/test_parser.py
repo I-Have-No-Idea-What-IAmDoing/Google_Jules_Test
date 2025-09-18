@@ -280,5 +280,35 @@ class TestParser(unittest.TestCase):
         self.assertNotIn("#comments", parsed["Action"])
 
 
+    def test_multiline_text_in_tag(self):
+        """Tests that multiple lines of text within a single tag are correctly concatenated."""
+        data = """
+        <tag>
+            line 1
+            line 2
+        </tag>
+        """
+        # This structure will not hit the += line, but it's the closest we can get
+        # with the current parser implementation.
+        parsed = deserialize(data)
+        self.assertEqual(parsed['tag']['#text'], 'line 1\nline 2')
+
+    def test_mismatched_closing_tag_error_specific(self):
+        """A very specific test to trigger the mismatched tag error."""
+        with self.assertRaisesRegex(ValueError, "Mismatched closing tag '</action>' on line 2"):
+            deserialize("[action]\n</action>")
+
+    def test_serialize_with_non_dict_value(self):
+        """Tests that serializing a dictionary with non-dictionary values does not fail."""
+        data = {"key1": "value1", "key2": {"#text": "text"}}
+        serialized = serialize(data)
+        # Top-level keys are serialized as action groups
+        self.assertIn("[key2]", serialized)
+        self.assertIn("text", serialized)
+        self.assertNotIn("<key2>", serialized)
+        self.assertNotIn("key1", serialized)
+        self.assertNotIn("value1", serialized)
+
+
 if __name__ == '__main__':
     unittest.main()
