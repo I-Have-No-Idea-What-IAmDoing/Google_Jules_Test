@@ -256,5 +256,29 @@ class TestParser(unittest.TestCase):
         self.assertIn("# line 2", serialized)
 
 
+    def test_trailing_comment_in_block(self):
+        """Tests that trailing comments in a block are associated with that block."""
+        data = """
+[Action]
+    <Child>
+        # This is a trailing comment inside Child.
+    </Child>
+[/Action]
+"""
+        parsed = deserialize(data)
+
+        # The trailing comment should be associated with 'Child'.
+        self.assertIn("Child", parsed["Action"])
+        self.assertIn("#comments", parsed["Action"]["Child"])
+        self.assertEqual(
+            parsed["Action"]["Child"]["#comments"],
+            ["This is a trailing comment inside Child."]
+        )
+
+        # Ensure the comment is not incorrectly attached to a parent or the root.
+        self.assertNotIn("#comments", parsed)
+        self.assertNotIn("#comments", parsed["Action"])
+
+
 if __name__ == '__main__':
     unittest.main()
