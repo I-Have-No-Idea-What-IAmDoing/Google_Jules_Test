@@ -202,6 +202,54 @@ class TestFinalCoreWorkflow(unittest.TestCase):
         final_call_prompt = mock_api_request.call_args[0][1]['prompt']
         self.assertIn("First, provide a step-by-step reasoning", final_call_prompt)
 
+    @patch('os.path.exists', return_value=False)
+    @patch('builtins.open')
+    @patch('translator_lib.core.parser.deserialize')
+    @patch('translator_lib.core.collect_text_nodes')
+    @patch('translator_lib.core.ensure_model_loaded')
+    @patch('translator_lib.core.get_translation')
+    def test_direct_translation_line_by_line(self, mock_get_translation, mock_ensure_model, mock_collect, mock_deserialize, mock_open, mock_exists):
+        """Test the direct translation workflow with line-by-line mode enabled."""
+        mock_collect.side_effect = lambda data, lst: lst.extend([{'#text': 'line one\nline two'}])
+        # Mock returns the same text it received
+        mock_get_translation.side_effect = lambda text, **kwargs: text
+
+        args = {
+            **self.base_args, "refine_mode": False, "model_name": "direct-model",
+            "line_by_line": True
+        }
+
+        core.translate_file(**args)
+
+        self.assertEqual(mock_get_translation.call_count, 2)
+        mock_get_translation.assert_has_calls([
+            call(text='line one', model_name='direct-model', api_base_url='http://test.url', glossary_text=None, debug=0, use_reasoning=False),
+            call(text='line two', model_name='direct-model', api_base_url='http://test.url', glossary_text=None, debug=0, use_reasoning=False)
+        ], any_order=True)
+
+    @patch('os.path.exists', return_value=False)
+    @patch('builtins.open')
+    @patch('translator_lib.core.parser.deserialize')
+    @patch('translator_lib.core.collect_text_nodes')
+    @patch('translator_lib.core._get_refined_translation')
+    def test_refinement_translation_line_by_line(self, mock_get_refined_translation, mock_collect, mock_deserialize, mock_open, mock_exists):
+        """Test the refinement translation workflow with line-by-line mode enabled."""
+        mock_collect.side_effect = lambda data, lst: lst.extend([{'#text': 'line one\nline two'}])
+        mock_get_refined_translation.side_effect = lambda original_text, **kwargs: original_text
+
+        args = {
+            **self.base_args, "refine_mode": True, "model_name": "refine-model",
+            "draft_model": "draft-model", "line_by_line": True
+        }
+
+        core.translate_file(**args)
+
+        self.assertEqual(mock_get_refined_translation.call_count, 2)
+        # We can check the first arg of each call
+        self.assertEqual(mock_get_refined_translation.call_args_list[0][1]['original_text'], 'line one')
+        self.assertEqual(mock_get_refined_translation.call_args_list[1][1]['original_text'], 'line two')
+
+
 class TestModelLoading(unittest.TestCase):
 
     @patch('translator_lib.core._api_request')

@@ -203,6 +203,63 @@ def cleanup_markers(data: Union[Dict[str, Any], List[Any]]) -> None:
 
 # --- Main Orchestrator ---
 
+def _get_refined_translation(
+    original_text: str,
+    draft_model: str,
+    refine_model: str,
+    num_drafts: int,
+    api_base_url: str,
+    glossary_text: Optional[str],
+    glossary_for: str,
+    reasoning_for: Optional[str],
+    verbose: bool,
+    debug: int
+) -> str:
+    """
+    Gets a refined translation for a single piece of text.
+    """
+    use_draft_reasoning = reasoning_for in ['draft', 'all']
+    use_refine_reasoning = reasoning_for in ['refine', 'all']
+
+    # 1. Generate Drafts
+    ensure_model_loaded(draft_model, api_base_url, verbose, debug=debug)
+    draft_glossary = glossary_text if glossary_for in ['draft', 'all'] else None
+    drafts = [get_translation(original_text, draft_model, api_base_url, glossary_text=draft_glossary, debug=debug, use_reasoning=use_draft_reasoning) for _ in range(num_drafts)]
+
+    # 2. Refine Drafts
+    ensure_model_loaded(refine_model, api_base_url, verbose, debug=debug)
+    draft_list = "\n".join(f"{i+1}. ```{d}```" for i, d in enumerate(drafts))
+
+    if use_refine_reasoning:
+        prompt = (
+            "First, provide a step-by-step reasoning for your translation refinement, explaining your choices. "
+            "Then, on a new line, provide the final refined translation, and nothing else, prefixed with 'Translation:'.\n\n"
+            f"Refine these translations of '{original_text}':\n{draft_list}"
+        )
+    else:
+        prompt = f"Refine these translations of '{original_text}':\n{draft_list}"
+
+    if glossary_text and glossary_for in ['refine', 'all']:
+        prompt = f"Please use this glossary for context:\n{glossary_text}\n\n{prompt}"
+
+    payload = {"prompt": prompt, "model": refine_model}
+    response_data = _api_request("completions", payload, api_base_url, debug=debug)
+    full_response = response_data.get("choices", [{}])[0].get("text", "").strip()
+
+    if use_refine_reasoning:
+        if 'Translation:' in full_response:
+            _, refined_text = full_response.rsplit('Translation:', 1)
+            refined_text = refined_text.strip()
+        else:
+            if debug >= 1:
+                print(f"--- DEBUG (L1): Refine reasoning mode enabled, but 'Translation:' marker not found. Using full response.", file=sys.stderr)
+            refined_text = full_response
+    else:
+        refined_text = full_response
+
+    return refined_text or original_text
+
+
 def translate_file(**args: Any) -> str:
     """
     The main orchestrator function for the entire translation process.
@@ -211,13 +268,19 @@ def translate_file(**args: Any) -> str:
     Args:
         **args (dict): A dictionary of arguments from the CLI.
     """
+    # --- Argument Unpacking ---
     input_path = args['input_path']
     api_base_url = args.get('api_base_url', DEFAULT_API_BASE_URL)
     glossary_text = args.get('glossary_text')
     glossary_for = args.get('glossary_for', 'all')
     debug_mode = args.get('debug', 0)
     reasoning_for = args.get('reasoning_for')
+    verbose = args.get('verbose', False)
+    line_by_line = args.get('line_by_line', False)
+    refine_mode = args.get('refine_mode', False)
+    model_name = args.get('model_name')
 
+    # --- File I/O and Setup ---
     if args.get('output_file') and os.path.exists(args['output_file']):
         if not args.get('quiet'): print(f"Output file {args['output_file']} already exists. Skipping.")
         return ""
@@ -233,71 +296,74 @@ def translate_file(**args: Any) -> str:
         if not args.get('quiet'): print("No text to translate.")
         return parser.serialize(data_structure)
 
+    # --- Pre-load model for direct mode to avoid reloading in loop ---
+    if not refine_mode:
+        ensure_model_loaded(model_name, api_base_url, verbose, debug=debug_mode)
+
+    # --- Main Translation Loop ---
     with tqdm(total=len(nodes_to_translate), desc="Translating", unit="node", disable=args.get('quiet')) as pbar:
-        if args.get('refine_mode'):
-            # Refinement Batch Workflow
-            draft_model = args['draft_model']
-            refine_model = args['model_name']
-            num_drafts = args.get('num_drafts', 6)
-            use_draft_reasoning = reasoning_for in ['draft', 'all']
-            use_refine_reasoning = reasoning_for in ['refine', 'all']
+        for node in nodes_to_translate:
+            original_text = node['#text']
+            translated_text = ""
 
-            verbose = args.get('verbose', False)
-            ensure_model_loaded(draft_model, api_base_url, verbose, debug=debug_mode)
-            drafts_data: List[Dict[str, Any]] = []
-            pbar.set_description(f"Drafting ({draft_model})")
-            for node in nodes_to_translate:
-                original_text = node['#text']
-                draft_glossary = glossary_text if glossary_for in ['draft', 'all'] else None
-                drafts = [get_translation(original_text, draft_model, api_base_url, glossary_text=draft_glossary, debug=debug_mode, use_reasoning=use_draft_reasoning) for _ in range(num_drafts)]
-                drafts_data.append({'original': original_text, 'drafts': drafts, 'node_ref': node})
-                pbar.update(0.5)
+            if line_by_line:
+                lines = original_text.splitlines()
+                translated_lines = []
+                for line in lines:
+                    if not line.strip():
+                        translated_lines.append(line)
+                        continue
 
-            verbose = args.get('verbose', False)
-            ensure_model_loaded(refine_model, api_base_url, verbose, debug=debug_mode)
-            pbar.set_description(f"Refining ({refine_model})")
-            for item in drafts_data:
-                draft_list = "\n".join(f"{i+1}. ```{d}```" for i, d in enumerate(item['drafts']))
-
-                if use_refine_reasoning:
-                    prompt = (
-                        "First, provide a step-by-step reasoning for your translation refinement, explaining your choices. "
-                        "Then, on a new line, provide the final refined translation, and nothing else, prefixed with 'Translation:'.\n\n"
-                        f"Refine these translations of '{item['original']}':\n{draft_list}"
+                    if refine_mode:
+                        translated_line = _get_refined_translation(
+                            original_text=line,
+                            draft_model=args['draft_model'],
+                            refine_model=model_name,
+                            num_drafts=args.get('num_drafts', 6),
+                            api_base_url=api_base_url,
+                            glossary_text=glossary_text,
+                            glossary_for=glossary_for,
+                            reasoning_for=reasoning_for,
+                            verbose=verbose,
+                            debug=debug_mode
+                        )
+                    else: # Direct mode
+                        translated_line = get_translation(
+                            text=line,
+                            model_name=model_name,
+                            api_base_url=api_base_url,
+                            glossary_text=glossary_text,
+                            debug=debug_mode,
+                            use_reasoning=(reasoning_for in ['main', 'all'])
+                        )
+                    translated_lines.append(translated_line)
+                translated_text = "\n".join(translated_lines)
+            else: # Translate entire node at once
+                if refine_mode:
+                    translated_text = _get_refined_translation(
+                        original_text=original_text,
+                        draft_model=args['draft_model'],
+                        refine_model=model_name,
+                        num_drafts=args.get('num_drafts', 6),
+                        api_base_url=api_base_url,
+                        glossary_text=glossary_text,
+                        glossary_for=glossary_for,
+                        reasoning_for=reasoning_for,
+                        verbose=verbose,
+                        debug=debug_mode
                     )
-                else:
-                    prompt = f"Refine these translations of '{item['original']}':\n{draft_list}"
+                else: # Direct mode
+                    translated_text = get_translation(
+                        text=original_text,
+                        model_name=model_name,
+                        api_base_url=api_base_url,
+                        glossary_text=glossary_text,
+                        debug=debug_mode,
+                        use_reasoning=(reasoning_for in ['main', 'all'])
+                    )
 
-                if glossary_text and glossary_for in ['refine', 'all']:
-                    prompt = f"Please use this glossary for context:\n{glossary_text}\n\n{prompt}"
-
-                payload = {"prompt": prompt, "model": refine_model}
-                response_data = _api_request("completions", payload, api_base_url, debug=debug_mode)
-                full_response = response_data.get("choices", [{}])[0].get("text", "").strip()
-
-                if use_refine_reasoning:
-                    if 'Translation:' in full_response:
-                        _, refined_text = full_response.rsplit('Translation:', 1)
-                        refined_text = refined_text.strip()
-                    else:
-                        if debug_mode >= 1:
-                            print(f"--- DEBUG (L1): Refine reasoning mode enabled, but 'Translation:' marker not found. Using full response.", file=sys.stderr)
-                        refined_text = full_response
-                else:
-                    refined_text = full_response
-
-                item['node_ref']['#text'] = f"jp_text:::{refined_text or item['original']}"
-                pbar.update(0.5)
-        else:
-            # Direct Batch Workflow
-            model_name = args['model_name']
-            verbose = args.get('verbose', False)
-            use_main_reasoning = reasoning_for in ['main', 'all']
-            ensure_model_loaded(model_name, api_base_url, verbose, debug=debug_mode)
-            for node in nodes_to_translate:
-                translated_text = get_translation(node['#text'], model_name, api_base_url, glossary_text=glossary_text, debug=debug_mode, use_reasoning=use_main_reasoning)
-                node['#text'] = f"jp_text:::{translated_text or node['#text']}"
-                pbar.update(1)
+            node['#text'] = f"jp_text:::{translated_text or original_text}"
+            pbar.update(1)
 
     cleanup_markers(data_structure)
     return parser.serialize(data_structure)
