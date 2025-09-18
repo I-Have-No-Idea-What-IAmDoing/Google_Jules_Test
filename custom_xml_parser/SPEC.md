@@ -110,7 +110,7 @@ Text content can contain placeholder variables that are replaced with dynamic va
 
 - **Syntax**: Comments begin with a hash symbol (`#`) and continue to the end of the line.
 - **Behavior**: The Java-based parser **completely ignores** comment lines. They are stripped from the file during processing and are not associated with any tags. They are purely for human readability.
-
+  - Note: The current Python parser ignores this rule and keeps comment for debug purposes and better file modifications.
 ---
 
 ## 8. Complete Example
