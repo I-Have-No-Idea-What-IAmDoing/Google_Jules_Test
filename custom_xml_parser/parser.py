@@ -38,6 +38,9 @@ def deserialize(text: str) -> Dict[str, Any]:
         if not stripped_line:
             if comment_part is not None and comment_part:
                 comment_buffer.append(comment_part)
+
+            if text_buffer:
+                text_buffer.append("")
             continue
 
         # Handle start tags
