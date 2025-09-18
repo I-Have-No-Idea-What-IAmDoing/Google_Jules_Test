@@ -66,12 +66,23 @@ def deserialize(text: str) -> Dict[str, Any]:
         match = action_end_re.match(stripped_line) or tag_end_re.match(stripped_line)
         if match:
             flush_text_buffer()
+
+            # Before closing the current scope, associate buffered comments with it.
+            current_dict = dict_stack[-1]
+            if comment_buffer:
+                if "#comments" not in current_dict:
+                    current_dict["#comments"] = []
+                current_dict["#comments"].extend(comment_buffer)
+                comment_buffer.clear()
+
             tag_name = match.group(1)
             expected_bracket = '[' if is_action_end else '<'
             if not tag_stack or tag_stack[-1] != (expected_bracket, tag_name):
                 raise ValueError(f"Mismatched closing tag '{stripped_line}' on line {line_num}")
+
             tag_stack.pop()
             dict_stack.pop()
+
             if comment_part: # Comment on a closing tag line
                 comment_buffer.append(comment_part)
             continue
