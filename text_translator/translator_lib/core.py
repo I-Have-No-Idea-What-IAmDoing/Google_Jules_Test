@@ -313,6 +313,7 @@ def translate_file(**args: Any) -> str:
             translated_text = ""
 
             if line_by_line:
+                had_trailing_newline = original_text.endswith('\n')
                 lines = original_text.splitlines()
                 translated_lines = []
                 for line in lines:
@@ -346,6 +347,8 @@ def translate_file(**args: Any) -> str:
                         )
                     translated_lines.append(translated_line)
                 translated_text = "\n".join(translated_lines)
+                if had_trailing_newline and not translated_text.endswith('\n'):
+                    translated_text += '\n'
             else: # Translate entire node at once
                 if refine_mode:
                     translated_text = _get_refined_translation(
