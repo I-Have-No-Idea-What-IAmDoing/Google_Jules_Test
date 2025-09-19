@@ -287,5 +287,184 @@ class TestDataProcessing(unittest.TestCase):
         self.assertEqual(data[0]['key'][0]['#text'], 'one')
         self.assertEqual(data[1]['#text'], 'two')
 
+class TestCoreHelpers(unittest.TestCase):
+
+    @patch('translator_lib.core.detect')
+    def test_is_translation_valid_success(self, mock_detect):
+        """Test that a good translation is considered valid."""
+        mock_detect.return_value = 'en'
+        self.assertTrue(core.is_translation_valid("こんにちは", "Hello"))
+
+    def test_is_translation_valid_empty(self):
+        """Test that an empty or whitespace-only translation is invalid."""
+        self.assertFalse(core.is_translation_valid("こんにちは", ""))
+        self.assertFalse(core.is_translation_valid("こんにちは", "   "))
+
+    def test_is_translation_valid_identical(self):
+        """Test that a translation identical to the original is invalid."""
+        self.assertFalse(core.is_translation_valid("こんにちは", "こんにちは"))
+        self.assertFalse(core.is_translation_valid("  hello  ", "hello"))
+
+    def test_is_translation_valid_refusal(self):
+        """Test that common refusal phrases are detected as invalid."""
+        self.assertFalse(core.is_translation_valid("text", "I'm sorry, I cannot translate this."))
+        self.assertFalse(core.is_translation_valid("text", "As an AI, I am unable to process this request."))
+
+    @patch('translator_lib.core.detect')
+    def test_is_translation_valid_language(self, mock_detect):
+        """Test that non-English translations are detected as invalid."""
+        mock_detect.return_value = 'ja'
+        self.assertFalse(core.is_translation_valid("こんにちは", "もしもし"))
+        mock_detect.assert_called_with("もしもし")
+
+        mock_detect.return_value = 'en'
+        self.assertTrue(core.is_translation_valid("こんにちは", "Hello"))
+
+    @patch('translator_lib.core.detect', side_effect=core.LangDetectException("No features found", "No features found"))
+    def test_is_translation_valid_lang_detect_exception(self, mock_detect):
+        """Test that a langdetect exception is handled gracefully and assumes validity."""
+        self.assertTrue(core.is_translation_valid("...", "???"))
+
+    def test_is_translation_valid_contains_original(self):
+        """Test that a translation containing the original text is invalid for long strings."""
+        original = "This is a long original sentence."
+        self.assertFalse(core.is_translation_valid(original, f"Here is the text: {original}"))
+        # Should be valid for short strings
+        self.assertTrue(core.is_translation_valid("short", "this is short"))
+
+    def test_collect_text_nodes_simple(self):
+        """Test collecting a single, simple text node."""
+        data = {"tag": {"#text": "こんにちは"}}
+        nodes = []
+        core.collect_text_nodes(data, nodes)
+        self.assertEqual(len(nodes), 1)
+        self.assertEqual(nodes[0]["#text"], "こんにちは")
+
+    def test_collect_text_nodes_deeply_nested(self):
+        """Test collecting text nodes from a deeply nested structure."""
+        data = {
+            "level1": {
+                "level2": {
+                    "level3": {"#text": "你好"}
+                }
+            }
+        }
+        nodes = []
+        core.collect_text_nodes(data, nodes)
+        self.assertEqual(len(nodes), 1)
+        self.assertEqual(nodes[0]["#text"], "你好")
+
+    def test_collect_text_nodes_multiple_nodes(self):
+        """Test collecting multiple text nodes."""
+        data = {
+            "greeting": {"#text": "こんにちは"},
+            "farewell": {"#text": "さようなら"},
+            "nested": {
+                "question": {"#text": "誰？"}
+            }
+        }
+        nodes = []
+        core.collect_text_nodes(data, nodes)
+        self.assertEqual(len(nodes), 3)
+        texts = {n["#text"] for n in nodes}
+        self.assertEqual(texts, {"こんにちは", "さようなら", "誰？"})
+
+    def test_collect_text_nodes_with_list(self):
+        """Test collecting text nodes from a structure containing a list."""
+        data = {
+            "items": [
+                {"item": {"#text": "one"}},
+                {"item": {"#text": "two"}}
+            ]
+        }
+        nodes = []
+        core.collect_text_nodes(data, nodes)
+        self.assertEqual(len(nodes), 2)
+        texts = {n["#text"] for n in nodes}
+        self.assertEqual(texts, {"one", "two"})
+
+    @patch('translator_lib.core.detect', return_value='en')
+    def test_collect_text_nodes_skips_english(self, mock_detect):
+        """Test that English text nodes are skipped."""
+        data = {"tag": {"#text": "This is already in English."}}
+        nodes = []
+        core.collect_text_nodes(data, nodes)
+        self.assertEqual(len(nodes), 0)
+
+    def test_collect_text_nodes_skips_processed_nodes(self):
+        """Test that nodes marked with 'jp_text:::' are skipped."""
+        data = {"tag": {"#text": "jp_text:::こんにちは"}}
+        nodes = []
+        core.collect_text_nodes(data, nodes)
+        self.assertEqual(len(nodes), 0)
+
+    def test_collect_text_nodes_mixed_content(self):
+        """Test a structure with mixed translatable and non-translatable nodes."""
+        data = {
+            "japanese_greeting": {"#text": "こんにちは"},
+            "english_greeting": {"#text": "Hello"},
+            "processed_greeting": {"#text": "jp_text:::おはよう"},
+            "nested_japanese": {
+                "message": {"#text": "さようなら"}
+            }
+        }
+        with patch('translator_lib.core.detect') as mock_detect:
+            # Let detect return 'ja' for japanese strings and 'en' for english
+            def side_effect(text):
+                if text in ["こんにちは", "さようなら"]:
+                    return 'ja'
+                return 'en'
+            mock_detect.side_effect = side_effect
+
+            nodes = []
+            core.collect_text_nodes(data, nodes)
+            self.assertEqual(len(nodes), 2)
+            texts = {n["#text"] for n in nodes}
+            self.assertEqual(texts, {"こんにちは", "さようなら"})
+
+    def test_cleanup_markers_simple(self):
+        """Test cleaning up a single marker."""
+        data = {"tag": {"#text": "jp_text:::Hello"}}
+        core.cleanup_markers(data)
+        self.assertEqual(data["tag"]["#text"], "Hello")
+
+    def test_cleanup_markers_nested(self):
+        """Test cleaning up markers in a nested structure."""
+        data = {
+            "level1": {
+                "level2": {"#text": "jp_text:::Nested Hello"},
+                "item": {"#text": "No marker here"}
+            }
+        }
+        core.cleanup_markers(data)
+        self.assertEqual(data["level1"]["level2"]["#text"], "Nested Hello")
+        self.assertEqual(data["level1"]["item"]["#text"], "No marker here")
+
+    def test_cleanup_markers_in_list(self):
+        """Test cleaning up markers in a list."""
+        data = {
+            "items": [
+                {"item": {"#text": "jp_text:::one"}},
+                {"item": {"#text": "two"}},
+                {"item": {"#text": "jp_text:::three"}}
+            ]
+        }
+        core.cleanup_markers(data)
+        self.assertEqual(data["items"][0]["item"]["#text"], "one")
+        self.assertEqual(data["items"][1]["item"]["#text"], "two")
+        self.assertEqual(data["items"][2]["item"]["#text"], "three")
+
+    def test_cleanup_markers_no_markers(self):
+        """Test that the function does not alter data with no markers."""
+        original_data = {
+            "greeting": {"#text": "hello"},
+            "farewell": {"#text": "goodbye"}
+        }
+        # Create a deep copy for comparison
+        import copy
+        data_to_clean = copy.deepcopy(original_data)
+        core.cleanup_markers(data_to_clean)
+        self.assertEqual(original_data, data_to_clean)
+
 if __name__ == '__main__':
     unittest.main()
