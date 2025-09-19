@@ -26,7 +26,8 @@ def process_single_file(input_file: str, output_file: Optional[str], args: argpa
             "glossary_text": glossary_text,
             "glossary_for": args.glossary_for,
             "reasoning_for": args.reasoning_for,
-            "line_by_line": args.line_by_line
+            "line_by_line": args.line_by_line,
+            "overwrite": args.overwrite
         }
 
         translated_content = translate_file(**core_args)
@@ -85,6 +86,7 @@ def main() -> None:
     parser.add_argument("input_path", help="Path to the input file or directory to be translated.")
     parser.add_argument("--model", required=True, help="Name of the main translation model to use (or the refiner model in --refine mode).")
     parser.add_argument("--output", help="Optional. Path to the output file or directory. If not provided, a default will be used.")
+    parser.add_argument("--overwrite", action="store_true", help="Overwrite output file if it already exists.")
 
     # Directory processing options
     dir_group = parser.add_argument_group('Directory Options')

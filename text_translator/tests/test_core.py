@@ -178,6 +178,26 @@ class TestFinalCoreWorkflow(unittest.TestCase):
             core.translate_file(**args)
             mock_open.assert_not_called()
 
+    @patch('os.path.exists', return_value=True)
+    @patch('builtins.open', new_callable=unittest.mock.mock_open, read_data='test')
+    @patch('translator_lib.core.parser.deserialize')
+    @patch('translator_lib.core.collect_text_nodes')
+    @patch('translator_lib.core.ensure_model_loaded')
+    @patch('translator_lib.core.get_translation')
+    def test_translate_file_output_overwrite(self, mock_get_translation, mock_ensure_model, mock_collect, mock_deserialize, mock_open, mock_exists):
+        """Test that the function overwrites the output file if the flag is set."""
+        mock_collect.side_effect = lambda data, lst: lst.extend([{'#text': 'one'}])
+        mock_get_translation.return_value = "translated"
+        mock_deserialize.return_value = {} # Mock the return value of deserialize
+        with patch('translator_lib.core.parser.serialize') as mock_serialize:
+            mock_serialize.return_value = "translated"
+            args = {**self.base_args, "output_file": "out.txt", "overwrite": True, "refine_mode": False, "model_name": "direct-model"}
+            result = core.translate_file(**args)
+            # Check that the translation was actually performed
+            mock_get_translation.assert_called()
+            # And that the translated content is returned
+            self.assertIn("translated", result)
+
 class TestGetTranslation(unittest.TestCase):
     @patch('translator_lib.core.is_translation_valid', return_value=True)
     @patch('translator_lib.core._api_request')
