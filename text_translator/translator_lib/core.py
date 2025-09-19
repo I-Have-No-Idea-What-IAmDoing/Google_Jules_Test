@@ -170,7 +170,7 @@ def get_translation(text: str, model_name: str, api_base_url: str, glossary_text
                 time.sleep(2 ** attempt)
             else:
                 raise e
-    return text
+    raise ValueError("Failed to get a valid translation after 3 attempts")
 
 # --- Data Processing & Workflow ---
 
