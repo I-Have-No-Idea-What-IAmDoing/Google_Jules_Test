@@ -258,6 +258,10 @@ class TestTranslationValidation(unittest.TestCase):
     def test_validation_contains_original(self):
         self.assertFalse(core.is_translation_valid("this is a long original text", "this is a long original text repeated"))
 
+    def test_validation_contains_original_case_insensitive(self):
+        """Test that validation fails if the original text is present, ignoring case."""
+        self.assertFalse(core.is_translation_valid("this is a long original text", "this is a long ORIGINAL text repeated"))
+
     def test_validation_lang_detect_exception(self):
         with patch('translator_lib.core.detect', side_effect=core.LangDetectException(0, "error")):
             self.assertTrue(core.is_translation_valid("original", "a valid translation"))
