@@ -8,6 +8,9 @@ from tqdm import tqdm
 from langdetect import detect, LangDetectException
 from typing import Any, Dict, List, Optional, Union
 
+# TODO: Add overwrite flag which overwrite files instead of just skipping them
+# TODO: Check if server if active before any api request and if not then alert the user and stop
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 from custom_xml_parser import parser
 
@@ -127,7 +130,7 @@ def get_translation(text: str, model_name: str, api_base_url: str, glossary_text
             f"Original text: {text}"
         )
     else:
-        prompt = f"Translate into English:\n\n{text}"
+        prompt = f"Translate the following segment into English, without additional explanation or commentary:\n\n{text}"
 
     if glossary_text:
         prompt = f"Please use this glossary for context:\n{glossary_text}\n\n{prompt}"
