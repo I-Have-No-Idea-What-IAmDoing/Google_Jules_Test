@@ -104,7 +104,7 @@ def is_translation_valid(original_text: str, translated_text: str, debug: int = 
 
     # 5. Check if the translation contains the original text (for longer strings)
     # This is a strong indicator of the model simply repeating the input.
-    if len(original_text) > 15 and original_text in translated_text:
+    if len(original_text) > 15 and original_text.lower() in translated_text.lower():
         if debug >= 1: print(f"--- DEBUG (L1): Validation failed: Translation contains original text.", file=sys.stderr)
         return False
 
