@@ -71,7 +71,7 @@ def ensure_model_loaded(model_name: str, api_base_url: str, verbose: bool = Fals
 
 # --- Translation Logic ---
 
-def is_translation_valid(original_text: str, translated_text: str, debug: int = 0) -> bool:
+def is_translation_valid(original_text: str, translated_text: str, debug: int = 0, line_by_line: bool = False) -> bool:
     """
     Validates the translated text against a set of heuristics.
     """
@@ -108,9 +108,14 @@ def is_translation_valid(original_text: str, translated_text: str, debug: int = 
         if debug >= 1: print(f"--- DEBUG (L1): Validation failed: Translation contains original text.", file=sys.stderr)
         return False
 
+    # 6. Check for multiple lines when in line-by-line mode
+    if line_by_line and len(translated_text.strip().splitlines()) > 1:
+        if debug >= 1: print(f"--- DEBUG (L1): Validation failed: Translation contains multiple lines in line-by-line mode.", file=sys.stderr)
+        return False
+
     return True
 
-def get_translation(text: str, model_name: str, api_base_url: str, glossary_text: Optional[str] = None, debug: int = 0, use_reasoning: bool = False, **kwargs: Any) -> str:
+def get_translation(text: str, model_name: str, api_base_url: str, glossary_text: Optional[str] = None, debug: int = 0, use_reasoning: bool = False, line_by_line: bool = False, **kwargs: Any) -> str:
     """
     Gets a translation for a single piece of text, with retries.
     This is the simplest translation function, used for drafts and direct mode.
@@ -148,7 +153,7 @@ def get_translation(text: str, model_name: str, api_base_url: str, glossary_text
             else:
                 translated_text = full_response
 
-            if not is_translation_valid(text, translated_text, debug):
+            if not is_translation_valid(text, translated_text, debug, line_by_line=line_by_line):
                 if debug >= 1:
                     print(f"--- DEBUG (L1): Translation failed validation. Retrying... (Attempt {attempt + 1}/3)", file=sys.stderr)
                 time.sleep(2 ** attempt)
@@ -213,7 +218,8 @@ def _get_refined_translation(
     glossary_for: str,
     reasoning_for: Optional[str],
     verbose: bool,
-    debug: int
+    debug: int,
+    line_by_line: bool = False
 ) -> str:
     """
     Gets a refined translation for a single piece of text.
@@ -224,7 +230,7 @@ def _get_refined_translation(
     # 1. Generate Drafts
     ensure_model_loaded(draft_model, api_base_url, verbose, debug=debug)
     draft_glossary = glossary_text if glossary_for in ['draft', 'all'] else None
-    drafts = [get_translation(original_text, draft_model, api_base_url, glossary_text=draft_glossary, debug=debug, use_reasoning=use_draft_reasoning) for _ in range(num_drafts)]
+    drafts = [get_translation(original_text, draft_model, api_base_url, glossary_text=draft_glossary, debug=debug, use_reasoning=use_draft_reasoning, line_by_line=line_by_line) for _ in range(num_drafts)]
 
     # 2. Refine Drafts
     ensure_model_loaded(refine_model, api_base_url, verbose, debug=debug)
@@ -325,7 +331,8 @@ def translate_file(**args: Any) -> str:
                             glossary_for=glossary_for,
                             reasoning_for=reasoning_for,
                             verbose=verbose,
-                            debug=debug_mode
+                            debug=debug_mode,
+                            line_by_line=True
                         )
                     else: # Direct mode
                         translated_line = get_translation(
@@ -334,7 +341,8 @@ def translate_file(**args: Any) -> str:
                             api_base_url=api_base_url,
                             glossary_text=glossary_text,
                             debug=debug_mode,
-                            use_reasoning=(reasoning_for in ['main', 'all'])
+                            use_reasoning=(reasoning_for in ['main', 'all']),
+                            line_by_line=True
                         )
                     translated_lines.append(translated_line)
                 translated_text = "\n".join(translated_lines)

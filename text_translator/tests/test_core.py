@@ -266,6 +266,17 @@ class TestTranslationValidation(unittest.TestCase):
         with patch('translator_lib.core.detect', return_value='en'):
             self.assertTrue(core.is_translation_valid("original", "a valid translation"))
 
+    def test_validation_multiline_in_line_by_line_mode(self):
+        """Test that multi-line translations are invalid in line-by-line mode."""
+        # Fails because of the embedded newline
+        self.assertFalse(core.is_translation_valid("original", "hello\nworld", line_by_line=True))
+        # Passes because it's a single line
+        self.assertTrue(core.is_translation_valid("original", "hello world", line_by_line=True))
+        # Passes because the trailing newline is stripped before checking
+        self.assertTrue(core.is_translation_valid("original", "hello world\n", line_by_line=True))
+        # Passes because line_by_line is False
+        self.assertTrue(core.is_translation_valid("original", "hello\nworld", line_by_line=False))
+
 class TestDataProcessing(unittest.TestCase):
     def test_collect_text_nodes_with_list(self):
         data = [{"key": [{"#text": "one"}]}, {"#text": "two"}]
