@@ -8,14 +8,35 @@ from tqdm import tqdm
 from langdetect import detect, LangDetectException
 from typing import Any, Dict, List, Optional, Union
 
-# TODO: Check if server if active before any api request and if not then alert the user and stop
-
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 from custom_xml_parser import parser
 
 DEFAULT_API_BASE_URL: str = "http://127.0.0.1:5000/v1"
 
 # --- API Communication & Model Management ---
+
+def check_server_status(api_base_url: str, debug: int = 0) -> None:
+    """
+    Checks if the API server is running by making a simple request.
+    Exits the program if the server is not available.
+    """
+    if debug >= 1:
+        print(f"--- DEBUG (L1): Checking server status at {api_base_url} ---", file=sys.stderr)
+    try:
+        # Use a lightweight endpoint that is likely to exist.
+        _api_request("internal/model/info", {}, api_base_url, is_get=True, timeout=10, debug=debug)
+        if debug >= 1:
+            print(f"--- DEBUG (L1): Server is active. ---", file=sys.stderr)
+    except ConnectionError:
+        print(
+            f"\n---FATAL ERROR---\n"
+            f"Could not connect to the translation API server at '{api_base_url}'.\n"
+            f"Please ensure the oobabooga web UI server is running and the API is enabled.\n"
+            f"-------------------\n",
+            file=sys.stderr
+        )
+        sys.exit(1)
+
 
 def _api_request(endpoint: str, payload: Dict[str, Any], api_base_url: str, timeout: int = 60, is_get: bool = False, debug: int = 0) -> Dict[str, Any]:
     """

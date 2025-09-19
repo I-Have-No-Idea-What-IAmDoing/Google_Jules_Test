@@ -2,7 +2,7 @@ import argparse
 import os
 import sys
 from typing import Optional, Any
-from translator_lib.core import translate_file, DEFAULT_API_BASE_URL
+from translator_lib.core import translate_file, DEFAULT_API_BASE_URL, check_server_status
 
 def process_single_file(input_file: str, output_file: Optional[str], args: argparse.Namespace, api_url: str, glossary_text: Optional[str]) -> None:
     """Processes a single file."""
@@ -134,6 +134,13 @@ def main() -> None:
 
     # Determine API base URL
     api_url = args.api_base_url or os.environ.get("OOBABOOGA_API_BASE_URL") or DEFAULT_API_BASE_URL
+
+    # Check server status before proceeding
+    if not args.quiet:
+        print("Checking server status...")
+    check_server_status(api_url, args.debug)
+    if not args.quiet:
+        print("Server is active.")
 
     # --- Glossary Processing ---
     glossary_text = args.glossary_text
