@@ -133,56 +133,66 @@ def merge(d1: Dict[str, Any], d2: Dict[str, Any]) -> Dict[str, Any]:
 def serialize(data: Dict[str, Any]) -> str:
     """
     Serializes a nested dictionary into a string in the custom XML-like format.
-
-    Args:
-        data: The nested dictionary to serialize.
-
-    Returns:
-        A string in the custom format.
     """
-    # Use a set to track comments that have already been serialized to prevent duplication.
-    return _serialize_recursive(data, 0, True, set()).strip()
+    result = []
 
-def _serialize_recursive(data: Dict[str, Any], level: int, is_action_group: bool, handled_comments: set) -> str:
+    # Process top-level action groups first.
+    for key, value in data.items():
+        if key.startswith("#") or not isinstance(value, dict):
+            continue
+
+        # Comments for the action group tag come before the tag itself.
+        if "#comments" in value:
+            for comment in value["#comments"]:
+                result.append(f"# {comment}")
+
+        result.append(f"[{key}]")
+        # The helper function serializes the content *inside* the action group.
+        content = _serialize_content(value, 1)
+        if content:
+            result.append(content)
+        result.append(f"[/{key}]")
+
+    # Root-level comments must be serialized at the very end of the file
+    # to be correctly parsed by the deserializer.
+    if "#comments" in data:
+        # Add a newline to separate from the last action group if necessary.
+        if result:
+            result.append("")
+        for comment in data["#comments"]:
+            result.append(f"# {comment}")
+
+    return "\n".join(result)
+
+
+def _serialize_content(data: Dict[str, Any], level: int) -> str:
+    """
+    Recursively serializes the content (text and standard tags) within a tag.
+    """
     result: List[str] = []
     indent = "\t" * level
 
-    # Text content should be output first for the current level.
+    # Text content is always output first at its level.
     if "#text" in data:
-        text_lines = data["#text"].split('\n')
-        for line in text_lines:
+        # Split and re-indent to handle multiline text correctly.
+        for line in data["#text"].split('\n'):
             result.append(f"{indent}{line}")
 
-    # Then, process child tags.
+    # Then, process nested standard tags.
     for key, value in data.items():
-        if key.startswith("#"):
+        if key.startswith("#") or not isinstance(value, dict):
             continue
 
-        if not isinstance(value, dict):
-            continue
-
-        # Comments for the child tag come before the tag itself.
-        # These are "header" comments.
+        # Comments for the nested tag come before the tag itself.
         if "#comments" in value:
             for comment in value["#comments"]:
-                if comment not in handled_comments:
-                    result.append(f"{indent}# {comment}")
-                    handled_comments.add(comment)
-
-        # Determine tag type based on whether we are at the top level of the structure.
-        open_tag, close_tag = (f"[{key}]", f"[/{key}]") if is_action_group else (f"<{key}>", f"</{key}>")
-
-        result.append(f"{indent}{open_tag}")
-        # ALL recursive calls are for nested tags, which are never action groups.
-        result.append(_serialize_recursive(value, level + 1, False, handled_comments))
-        result.append(f"{indent}{close_tag}")
-
-    # Finally, handle any comments associated with the current dictionary context.
-    # These are "trailing" comments that appear after all child tags.
-    if "#comments" in data:
-        for comment in data["#comments"]:
-            if comment not in handled_comments:
                 result.append(f"{indent}# {comment}")
-                handled_comments.add(comment)
+
+        result.append(f"{indent}<{key}>")
+        # The recursive call serializes the content *inside* the nested tag.
+        content = _serialize_content(value, level + 1)
+        if content:
+            result.append(content)
+        result.append(f"{indent}</{key}>")
 
     return "\n".join(result)

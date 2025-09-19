@@ -310,5 +310,34 @@ class TestParser(unittest.TestCase):
         self.assertNotIn("value1", serialized)
 
 
+    def test_duplicate_comments_round_trip(self):
+        """
+        Tests that a round trip of deserialize -> serialize -> deserialize
+        preserves duplicate comments.
+        """
+        data_with_duplicates = '''
+# comment
+[Action]
+    # comment
+    <Child1>
+        # comment
+        text1
+    </Child1>
+    # comment
+    <Child2>
+        # comment
+        text2
+    </Child2>
+    # comment
+[/Action]
+# comment
+'''
+        deserialized_once = deserialize(data_with_duplicates)
+        serialized_output = serialize(deserialized_once)
+        deserialized_twice = deserialize(serialized_output)
+
+        self.assertEqual(deserialized_once, deserialized_twice)
+
+
 if __name__ == '__main__':
     unittest.main()
