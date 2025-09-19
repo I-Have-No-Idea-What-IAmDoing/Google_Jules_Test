@@ -218,9 +218,20 @@ class TestGetTranslation(unittest.TestCase):
         """Test get_translation with reasoning mode when the marker is missing."""
         with patch('translator_lib.core.is_translation_valid', return_value=True):
             mock_api_request.return_value = {"choices": [{"text": "This is just the translation."}]}
-            result = core.get_translation("original", "test-model", "http://test.url", use_reasoning=True)
-            self.assertEqual(result, "original")
+            # If the marker is missing after all retries, it should raise an error.
+            with self.assertRaises(ValueError):
+                core.get_translation("original", "test-model", "http://test.url", use_reasoning=True)
             self.assertEqual(mock_api_request.call_count, 3)
+
+    @patch('translator_lib.core.is_translation_valid', return_value=False)
+    @patch('translator_lib.core._api_request')
+    def test_get_translation_raises_error_on_persistent_invalid(self, mock_api, mock_is_valid):
+        """Test that get_translation raises ValueError if the translation is always invalid."""
+        mock_api.return_value = {"choices": [{"text": "some invalid response"}]}
+        with self.assertRaises(ValueError):
+            core.get_translation("original text", "model", "url")
+        # It should try 3 times
+        self.assertEqual(mock_api.call_count, 3)
 
 class TestApiRequest(unittest.TestCase):
     @patch('requests.post')
