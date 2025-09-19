@@ -8,7 +8,6 @@ from tqdm import tqdm
 from langdetect import detect, LangDetectException
 from typing import Any, Dict, List, Optional, Union
 
-# TODO: Add overwrite flag which overwrite files instead of just skipping them
 # TODO: Check if server if active before any api request and if not then alert the user and stop
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
@@ -290,7 +289,7 @@ def translate_file(**args: Any) -> str:
     model_name = args.get('model_name')
 
     # --- File I/O and Setup ---
-    if args.get('output_file') and os.path.exists(args['output_file']):
+    if args.get('output_file') and os.path.exists(args['output_file']) and not args.get('overwrite'):
         if not args.get('quiet'): print(f"Output file {args['output_file']} already exists. Skipping.")
         return ""
 
