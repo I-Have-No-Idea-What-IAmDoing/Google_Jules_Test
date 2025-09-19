@@ -339,5 +339,60 @@ class TestParser(unittest.TestCase):
         self.assertEqual(deserialized_once, deserialized_twice)
 
 
+    def test_serialize_root_comments_first(self):
+        """
+        Tests that root-level comments are serialized before any action groups.
+        """
+        data = {
+            "#comments": ["This is a root comment."],
+            "MyAction": {
+                "Settings": {
+                    "#text": "mode a"
+                }
+            }
+        }
+
+        serialized = serialize(data)
+
+        # The comment should appear before the action group.
+        expected_prefix = "# This is a root comment."
+        self.assertTrue(
+            serialized.strip().startswith(expected_prefix),
+            f"Expected output to start with '{expected_prefix}', but got:\n{serialized}"
+        )
+
+    def test_round_trip_with_root_and_action_comments(self):
+        """
+        Tests that a round trip preserves the distinction between root and action comments.
+        """
+        input_string = (
+            "# This is a root comment.\\n"
+            "\\n"
+            "# This is an action comment.\\n"
+            "[MyAction]\\n"
+            "    <Data>info</Data>\\n"
+            "[/MyAction]"
+        ).replace("\\n", "\n")
+
+        # 1. Deserialize the initial string
+        d1 = deserialize(input_string)
+
+        # Check initial deserialization is correct
+        self.assertIn("#comments", d1)
+        self.assertEqual(d1["#comments"], ["This is a root comment."])
+        self.assertIn("MyAction", d1)
+        self.assertIn("#comments", d1["MyAction"])
+        self.assertEqual(d1["MyAction"]["#comments"], ["This is an action comment."])
+
+        # 2. Serialize it back
+        s2 = serialize(d1)
+
+        # 3. Deserialize again
+        d2 = deserialize(s2)
+
+        # 4. Assert that the data structure is unchanged
+        self.assertEqual(d1, d2)
+
+
 if __name__ == '__main__':
     unittest.main()

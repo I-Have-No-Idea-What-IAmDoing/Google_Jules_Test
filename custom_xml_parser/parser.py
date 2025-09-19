@@ -38,6 +38,13 @@ def deserialize(text: str) -> Dict[str, Any]:
         if not stripped_line:
             if comment_part is not None and comment_part:
                 comment_buffer.append(comment_part)
+            # A blank line acts as a separator for comments.
+            elif comment_buffer:
+                current_dict = dict_stack[-1]
+                if "#comments" not in current_dict:
+                    current_dict["#comments"] = []
+                current_dict["#comments"].extend(comment_buffer)
+                comment_buffer.clear()
 
             if text_buffer:
                 text_buffer.append("")
@@ -136,7 +143,15 @@ def serialize(data: Dict[str, Any]) -> str:
     """
     result = []
 
-    # Process top-level action groups first.
+    # Serialize root-level comments first to preserve file header comments.
+    if "#comments" in data:
+        for comment in data["#comments"]:
+            result.append(f"# {comment}")
+        # Add a newline to separate from the first action group if necessary.
+        if any(not k.startswith("#") for k in data.keys()):
+            result.append("")
+
+    # Process top-level action groups.
     for key, value in data.items():
         if key.startswith("#") or not isinstance(value, dict):
             continue
@@ -152,15 +167,6 @@ def serialize(data: Dict[str, Any]) -> str:
         if content:
             result.append(content)
         result.append(f"[/{key}]")
-
-    # Root-level comments must be serialized at the very end of the file
-    # to be correctly parsed by the deserializer.
-    if "#comments" in data:
-        # Add a newline to separate from the last action group if necessary.
-        if result:
-            result.append("")
-        for comment in data["#comments"]:
-            result.append(f"# {comment}")
 
     return "\n".join(result)
 
