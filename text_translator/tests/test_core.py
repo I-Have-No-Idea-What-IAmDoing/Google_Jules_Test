@@ -134,6 +134,42 @@ class TestFinalCoreWorkflow(unittest.TestCase):
         self.assertEqual(mock_get_refined_translation.call_args_list[0][1]['original_text'], 'line one')
         self.assertEqual(mock_get_refined_translation.call_args_list[1][1]['original_text'], 'line two')
 
+    @patch('os.path.exists', return_value=False)
+    @patch('builtins.open')
+    @patch('translator_lib.core.parser.deserialize')
+    @patch('translator_lib.core.detect', return_value='ja')
+    @patch('translator_lib.core.ensure_model_loaded')
+    @patch('translator_lib.core.get_translation')
+    def test_line_by_line_preserves_trailing_newline(self, mock_get_translation, mock_ensure_model, mock_detect, mock_deserialize, mock_open, mock_exists):
+        """Test that line-by-line translation preserves a trailing newline."""
+        # The input text ends with a newline.
+        input_text = "line one\nline two\n"
+        data_structure = {'root': {'sub': {'#text': input_text}}}
+        mock_deserialize.return_value = data_structure
+
+        # The mock translation function just returns the original line + " (translated)"
+        mock_get_translation.side_effect = lambda text, **kwargs: f"{text} (translated)"
+
+        args = {
+            **self.base_args, "refine_mode": False, "model_name": "direct-model",
+            "line_by_line": True
+        }
+
+        # The function that serializes the output data structure.
+        with patch('translator_lib.core.parser.serialize') as mock_serialize:
+            core.translate_file(**args)
+
+            # Get the data structure that was passed to the serializer.
+            final_data = mock_serialize.call_args[0][0]
+            # Find the text node that was modified.
+            final_text = final_data['root']['sub']['#text']
+
+            # The bug is that the trailing newline is lost.
+            # The expected output should be "line one (translated)\nline two (translated)\n"
+            # The actual output (with the bug) will be "line one (translated)\nline two (translated)"
+            self.assertTrue(final_text.endswith("\n"), f"Expected text to end with a newline, but it was: '{final_text}'")
+
+
     @patch('os.path.exists', return_value=True)
     def test_translate_file_output_exists(self, mock_exists):
         """Test that the function skips if the output file already exists."""
