@@ -337,7 +337,8 @@ class TestTranslationValidation(unittest.TestCase):
         with patch('translator_lib.core.detect', return_value='en'):
             self.assertTrue(core.is_translation_valid("original", "a valid translation"))
 
-    def test_validation_multiline_in_line_by_line_mode(self):
+    @patch('translator_lib.core.detect', return_value='en')
+    def test_validation_multiline_in_line_by_line_mode(self, mock_detect):
         """Test that multi-line translations are invalid in line-by-line mode."""
         # Fails because of the embedded newline
         self.assertFalse(core.is_translation_valid("original", "hello\nworld", line_by_line=True))
@@ -347,6 +348,49 @@ class TestTranslationValidation(unittest.TestCase):
         self.assertTrue(core.is_translation_valid("original", "hello world\n", line_by_line=True))
         # Passes because line_by_line is False
         self.assertTrue(core.is_translation_valid("original", "hello\nworld", line_by_line=False))
+
+@patch('translator_lib.core.detect', return_value='en')
+class TestTranslationValidationHeuristics(unittest.TestCase):
+    def test_validation_contains_japanese_chars(self, mock_detect):
+        """Test that validation fails if the translation contains Japanese characters."""
+        self.assertFalse(core.is_translation_valid("original", "This is a translation with こんにちは"))
+
+    def test_validation_excessive_repetition(self, mock_detect):
+        """Test that validation fails for excessively repetitive translations."""
+        # The check activates for texts with more than 10 words.
+        repetitive_text = "word " * 11
+        self.assertFalse(core.is_translation_valid("original", repetitive_text))
+
+        # This should be valid as it's not repetitive enough.
+        varied_text = "word " * 4 + "unique " * 4 + "another " * 3
+        self.assertTrue(core.is_translation_valid("original", varied_text))
+
+        # This should be valid as it's too short to trigger the check.
+        short_repetitive_text = "word " * 5
+        self.assertTrue(core.is_translation_valid("original", short_repetitive_text))
+
+    def test_validation_placeholder_text(self, mock_detect):
+        """Test that validation fails if the translation contains placeholder text."""
+        self.assertFalse(core.is_translation_valid("original", "This is a [translation here]"))
+        self.assertFalse(core.is_translation_valid("original", "This is a [...]"))
+        self.assertFalse(core.is_translation_valid("original", "This is a placeholder"))
+
+    def test_validation_length_ratio_too_low(self, mock_detect):
+        """Test that validation fails if the translation is too short compared to the original."""
+        original = "This is a very long original sentence that we are testing."
+        translated = "short"
+        self.assertFalse(core.is_translation_valid(original, translated))
+
+    def test_validation_length_ratio_too_high(self, mock_detect):
+        """Test that validation fails if the translation is too long compared to the original."""
+        original = "short original"
+        translated = "This is a very long translated sentence that is clearly too long and should fail the validation check."
+        self.assertFalse(core.is_translation_valid(original, translated))
+
+    def test_validation_contains_xml_html_tags(self, mock_detect):
+        """Test that validation fails if the translation contains XML/HTML tags."""
+        self.assertFalse(core.is_translation_valid("original", "This is a <tag>translation</tag>"))
+        self.assertFalse(core.is_translation_valid("original", "This is a <br> translation"))
 
 class TestDataProcessing(unittest.TestCase):
     def test_collect_text_nodes_with_list(self):

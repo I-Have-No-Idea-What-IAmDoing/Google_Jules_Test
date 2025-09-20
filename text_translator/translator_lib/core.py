@@ -4,6 +4,8 @@ import os
 import time
 import json
 import random
+import re
+from collections import Counter
 from tqdm import tqdm
 from langdetect import detect, LangDetectException
 from typing import Any, Dict, List, Optional, Union
@@ -134,6 +136,40 @@ def is_translation_valid(original_text: str, translated_text: str, debug: int = 
     # 6. Check for multiple lines when in line-by-line mode
     if line_by_line and len(translated_text.strip().splitlines()) > 1:
         if debug >= 1: print(f"--- DEBUG (L1): Validation failed: Translation contains multiple lines in line-by-line mode.", file=sys.stderr)
+        return False
+
+    # 7. Check for untranslated Japanese characters
+    if re.search(r'[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f]', translated_text):
+        if debug >= 1: print(f"--- DEBUG (L1): Validation failed: Translation contains Japanese characters.", file=sys.stderr)
+        return False
+
+    # 8. Check for excessive repetition
+    words = translated_text.lower().split()
+    if len(words) > 10:
+        word_counts = Counter(words)
+        most_common_word_count = word_counts.most_common(1)[0][1]
+        if most_common_word_count / len(words) > 0.4:
+            if debug >= 1: print(f"--- DEBUG (L1): Validation failed: Translation may be excessively repetitive.", file=sys.stderr)
+            return False
+
+    # 9. Check for placeholder/template text
+    placeholder_patterns = [r'\[translation here\]', r'placeholder', r'\[\.\.\.\]']
+    if any(re.search(p, translated_text, re.IGNORECASE) for p in placeholder_patterns):
+        if debug >= 1: print(f"--- DEBUG (L1): Validation failed: Translation contains placeholder text.", file=sys.stderr)
+        return False
+
+    # 10. Check length ratio (len_translated / len_original)
+    # Allow a wide range (0.3x to 3.0x) to account for language differences.
+    # Only apply to reasonably long strings to avoid noise.
+    if len(original_text) > 10:
+        ratio = len(translated_text) / len(original_text)
+        if not (0.3 < ratio < 3.0):
+            if debug >= 1: print(f"--- DEBUG (L1): Validation failed: Translation length ratio ({ratio:.2f}) is outside the 0.3-3.0 range.", file=sys.stderr)
+            return False
+
+    # 11. Check for leftover XML/HTML tags
+    if re.search(r'<[^>]+>', translated_text):
+        if debug >= 1: print(f"--- DEBUG (L1): Validation failed: Translation contains XML/HTML tags.", file=sys.stderr)
         return False
 
     return True
