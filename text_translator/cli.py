@@ -156,7 +156,10 @@ def main() -> None:
             print(f"Input is a directory. Translating all files in '{args.input_path}'...")
         process_directory(args, api_url, glossary_text)
     elif os.path.isfile(args.input_path):
-        process_single_file(args.input_path, args.output, args, api_url, glossary_text)
+        output_path = args.output
+        if output_path and os.path.isdir(output_path):
+            output_path = os.path.join(output_path, os.path.basename(args.input_path))
+        process_single_file(args.input_path, output_path, args, api_url, glossary_text)
     else:
         parser.error(f"Input path is not a valid file or directory: {args.input_path}")
 

@@ -284,5 +284,27 @@ class TestCommandLineInterface(unittest.TestCase):
                             cli.main()
         self.assertIn("Input path is not a valid file or directory", mock_stderr.getvalue())
 
+    @patch('text_translator.cli.check_server_status')
+    @patch('text_translator.cli.process_single_file')
+    def test_main_single_file_output_to_directory(self, mock_process, mock_check_server_status):
+        """Test that providing an output directory for a single file works correctly."""
+        input_file = os.path.join(self.test_dir, "input.txt")
+        with open(input_file, "w") as f:
+            f.write("test")
+
+        output_dir = os.path.join(self.test_dir, "output_dir")
+        os.makedirs(output_dir)
+
+        test_args = ["cli.py", input_file, "--model", "m", "--output", output_dir]
+
+        with patch.object(sys, 'argv', test_args):
+            cli.main()
+
+        mock_check_server_status.assert_called_once()
+        mock_process.assert_called_once()
+        # The output file path is the 2nd argument to process_single_file
+        expected_output_path = os.path.join(output_dir, "input.txt")
+        self.assertEqual(mock_process.call_args[0][1], expected_output_path)
+
 if __name__ == '__main__':
     unittest.main()
