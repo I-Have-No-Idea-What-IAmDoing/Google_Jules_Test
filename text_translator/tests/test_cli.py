@@ -1,14 +1,13 @@
 import unittest
 from unittest.mock import patch, call, ANY
-import sys
 import os
 from io import StringIO
 import tempfile
 import shutil
+import sys
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from text_translator import cli
-from translator_lib.options import TranslationOptions
+from text_translator.translator_lib.options import TranslationOptions
 
 class TestCommandLineInterface(unittest.TestCase):
 
