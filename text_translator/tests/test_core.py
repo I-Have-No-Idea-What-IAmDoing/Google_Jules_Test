@@ -278,6 +278,50 @@ class TestTranslationExtraction(unittest.TestCase):
         result = translation._extract_translation_from_response(response)
         self.assertEqual(result, "")
 
+class TestAdvancedTranslationExtraction(unittest.TestCase):
+    def test_extract_json_format(self):
+        """Test extraction with JSON format."""
+        response = '{"translation": "This is a JSON translation."}'
+        result = translation._extract_translation_from_response(response, use_json_format=True)
+        self.assertEqual(result, "This is a JSON translation.")
+
+    def test_extract_json_in_code_block(self):
+        """Test extraction with JSON format wrapped in markdown."""
+        response = '```json\n{"translation": "This is a JSON translation."}\n```'
+        result = translation._extract_translation_from_response(response, use_json_format=True)
+        self.assertEqual(result, "This is a JSON translation.")
+
+    def test_extract_json_in_code_block_no_json_identifier(self):
+        """Test extraction with JSON format wrapped in markdown without identifier."""
+        response = '```\n{"translation": "This is a JSON translation."}\n```'
+        result = translation._extract_translation_from_response(response, use_json_format=True)
+        self.assertEqual(result, "This is a JSON translation.")
+
+    def test_extract_malformed_json_fallback(self):
+        """Test fallback when JSON is malformed."""
+        response = '{"translation": "This is a malformed JSON" '
+        result = translation._extract_translation_from_response(response, use_json_format=True)
+        self.assertEqual(result, '{"translation": "This is a malformed JSON"')
+
+    def test_extract_with_alternative_marker(self):
+        """Test extraction with 'Translated Text:' marker."""
+        response = "Thinking...\nTranslated Text: This is the final text."
+        result = translation._extract_translation_from_response(response)
+        self.assertEqual(result, "This is the final text.")
+
+    def test_extract_with_case_insensitive_marker(self):
+        """Test extraction with a case-insensitive marker."""
+        response = "thinking...\ntranslation: This is the final text."
+        result = translation._extract_translation_from_response(response)
+        self.assertEqual(result, "This is the final text.")
+
+    def test_extract_with_no_marker_and_use_json_false(self):
+        """Test extraction returns full response when no marker and not using JSON."""
+        response = "This is a direct translation."
+        result = translation._extract_translation_from_response(response, use_json_format=False)
+        self.assertEqual(result, "This is a direct translation.")
+
+
 class TestApiAndModelHelpers(unittest.TestCase):
     def test_api_request_debug_printing(self):
         with patch('requests.post') as mock_post, \
