@@ -119,7 +119,7 @@ def get_translation(
     if debug:
         print(f"--- DEBUG: Translation Prompt ---\n{prompt}\n------------------------------------", file=sys.stderr)
 
-    endpoint = model_config.get("endpoint", "completions")
+    endpoint = model_config.get("endpoint", "chat/completions")
     payload = {"model": model_name, **model_config.get("params", {})}
 
     if endpoint == "chat/completions":
@@ -233,7 +233,7 @@ def _get_refined_translation(
     if glossary_text and glossary_for in ['refine', 'all']:
         prompt = f"Please use this glossary for context:\n{glossary_text}\n\n{prompt}"
 
-    endpoint = refine_model_config.get("endpoint", "completions")
+    endpoint = refine_model_config.get("endpoint", "chat/completions")
     payload = {"model": refine_model, **refine_model_config.get("params", {})}
     if endpoint == "chat/completions":
         payload["messages"] = [{"role": "user", "content": prompt}]

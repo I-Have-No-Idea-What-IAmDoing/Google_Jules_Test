@@ -1,6 +1,6 @@
 {
   "_default": {
-    "endpoint": "completions",
+    "endpoint": "chat/completions",
     "prompt_template": "Translate the following segment into English, without additional explanation or commentary:\n\n{text}",
     "reasoning_prompt_template": "First, provide a step-by-step reasoning for your translation, including cultural nuances and grammar points. Then, on a new line, provide the final translation, and nothing else, prefixed with 'Translation:'.\n\nOriginal text: {text}",
     "refine_prompt_template": "Refine these translations of '{original_text}':\n{draft_list}",
@@ -19,17 +19,11 @@
       "top_p": 1.0
     }
   },
-  "another-model": {
+  "legacy-completion-model": {
     "inherits": "_default",
+    "endpoint": "completions",
     "params": {
       "temperature": 0.9
-    }
-  },
-  "chat-model": {
-    "inherits": "_default",
-    "endpoint": "chat/completions",
-    "params": {
-      "temperature": 0.7
     }
   }
 }
