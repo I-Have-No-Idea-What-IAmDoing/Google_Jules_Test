@@ -296,21 +296,38 @@ def _get_refined_translation(
         prompt = f"Please use this glossary for context:\n{glossary_text}\n\n{prompt}"
 
     payload = {"prompt": prompt, "model": refine_model}
-    response_data = _api_request("completions", payload, api_base_url, debug=debug)
-    full_response = response_data.get("choices", [{}])[0].get("text", "").strip()
 
-    if use_refine_reasoning:
-        if 'Translation:' in full_response:
-            _, refined_text = full_response.rsplit('Translation:', 1)
-            refined_text = refined_text.strip()
-        else:
-            if debug:
-                print(f"--- DEBUG: Refine reasoning mode enabled, but 'Translation:' marker not found. Using full response.", file=sys.stderr)
-            refined_text = full_response
-    else:
-        refined_text = full_response
+    for attempt in range(3):
+        try:
+            response_data = _api_request("completions", payload, api_base_url, debug=debug)
+            full_response = response_data.get("choices", [{}])[0].get("text", "").strip()
 
-    return refined_text or original_text
+            if use_refine_reasoning:
+                if 'Translation:' in full_response:
+                    _, refined_text = full_response.rsplit('Translation:', 1)
+                    refined_text = refined_text.strip()
+                else:
+                    if debug:
+                        print(f"--- DEBUG: Refine reasoning mode enabled, but 'Translation:' marker not found. Retrying...", file=sys.stderr)
+                    time.sleep(2 ** attempt)
+                    continue
+            else:
+                refined_text = full_response
+
+            if not is_translation_valid(original_text, refined_text, debug=debug, line_by_line=line_by_line):
+                if debug:
+                    print(f"--- DEBUG: Refined translation failed validation. Retrying... (Attempt {attempt + 1}/3)", file=sys.stderr)
+                time.sleep(2 ** attempt)
+                continue
+
+            return refined_text or original_text
+        except ConnectionError as e:
+            if attempt < 2:
+                time.sleep(2 ** attempt)
+            else:
+                raise e
+
+    raise ValueError(f"Failed to get a valid refined translation for '{original_text[:50]}...' after 3 attempts")
 
 
 from .options import TranslationOptions
