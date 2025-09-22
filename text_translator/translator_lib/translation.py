@@ -119,16 +119,21 @@ def get_translation(
     if debug:
         print(f"--- DEBUG: Translation Prompt ---\n{prompt}\n------------------------------------", file=sys.stderr)
 
-    payload = {
-        "prompt": prompt,
-        "model": model_name,
-        **model_config.get("params", {})
-    }
+    endpoint = model_config.get("endpoint", "completions")
+    payload = {"model": model_name, **model_config.get("params", {})}
+
+    if endpoint == "chat/completions":
+        payload["messages"] = [{"role": "user", "content": prompt}]
+    else:
+        payload["prompt"] = prompt
 
     for attempt in range(3):
         try:
-            response_data = _api_request("completions", payload, api_base_url, debug=debug)
-            raw_response = response_data.get("choices", [{}])[0].get("text", "").strip()
+            response_data = _api_request(endpoint, payload, api_base_url, debug=debug)
+            if endpoint == "chat/completions":
+                raw_response = response_data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+            else:
+                raw_response = response_data.get("choices", [{}])[0].get("text", "").strip()
 
             if use_reasoning:
                 use_json = model_config.get("use_json_format", False)
@@ -228,16 +233,20 @@ def _get_refined_translation(
     if glossary_text and glossary_for in ['refine', 'all']:
         prompt = f"Please use this glossary for context:\n{glossary_text}\n\n{prompt}"
 
-    payload = {
-        "prompt": prompt,
-        "model": refine_model,
-        **refine_model_config.get("params", {})
-    }
+    endpoint = refine_model_config.get("endpoint", "completions")
+    payload = {"model": refine_model, **refine_model_config.get("params", {})}
+    if endpoint == "chat/completions":
+        payload["messages"] = [{"role": "user", "content": prompt}]
+    else:
+        payload["prompt"] = prompt
 
     for attempt in range(3):
         try:
-            response_data = _api_request("completions", payload, api_base_url, debug=debug)
-            full_response = response_data.get("choices", [{}])[0].get("text", "").strip()
+            response_data = _api_request(endpoint, payload, api_base_url, debug=debug)
+            if endpoint == "chat/completions":
+                full_response = response_data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+            else:
+                full_response = response_data.get("choices", [{}])[0].get("text", "").strip()
 
             if use_refine_reasoning:
                 use_json = refine_model_config.get("use_json_format", False)

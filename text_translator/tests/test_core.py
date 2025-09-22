@@ -240,6 +240,43 @@ class TestGetTranslation(unittest.TestCase):
                 translation.get_translation("original text", "model", "http://test.url", self.model_config)
             self.assertEqual(mock_api_request.call_count, 3)
 
+    def test_get_translation_chat_endpoint(self):
+        """Test get_translation uses the chat endpoint and formats payload correctly."""
+        chat_config = {
+            "endpoint": "chat/completions",
+            "prompt_template": "Translate for chat: {text}",
+            "params": {"temperature": 0.2}
+        }
+        with patch('text_translator.translator_lib.translation._api_request') as mock_api_request, \
+             patch('text_translator.translator_lib.validation.is_translation_valid', return_value=True):
+
+            mock_api_request.return_value = {"choices": [{"message": {"content": "translated"}}]}
+            translation.get_translation("original", "chat-model", "http://test.url", chat_config)
+
+            args, _ = mock_api_request.call_args
+            endpoint, payload = args[0], args[1]
+
+            self.assertEqual(endpoint, "chat/completions")
+            self.assertIn("messages", payload)
+            self.assertEqual(payload["messages"][0]["role"], "user")
+            self.assertEqual(payload["messages"][0]["content"], "Translate for chat: original")
+            self.assertNotIn("prompt", payload)
+
+    def test_get_translation_default_completions_endpoint(self):
+        """Test get_translation uses the completions endpoint by default."""
+        with patch('text_translator.translator_lib.translation._api_request') as mock_api_request, \
+             patch('text_translator.translator_lib.validation.is_translation_valid', return_value=True):
+
+            mock_api_request.return_value = {"choices": [{"text": "translated"}]}
+            translation.get_translation("original", "test-model", "http://test.url", self.model_config)
+
+            args, _ = mock_api_request.call_args
+            endpoint, payload = args[0], args[1]
+
+            self.assertEqual(endpoint, "completions")
+            self.assertIn("prompt", payload)
+            self.assertNotIn("messages", payload)
+
 
 class TestTranslationExtraction(unittest.TestCase):
     def test_extract_with_translation_marker(self):
