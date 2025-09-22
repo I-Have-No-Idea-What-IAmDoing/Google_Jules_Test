@@ -1,0 +1,27 @@
+{
+  "_default": {
+    "prompt_template": "Translate the following segment into English, without additional explanation or commentary:\n\n{text}",
+    "reasoning_prompt_template": "First, provide a step-by-step reasoning for your translation, including cultural nuances and grammar points. Then, on a new line, provide the final translation, and nothing else, prefixed with 'Translation:'.\n\nOriginal text: {text}",
+    "refine_prompt_template": "Refine these translations of '{original_text}':\n{draft_list}",
+    "refine_reasoning_prompt_template": "First, provide a step-by-step reasoning for your translation refinement, explaining your choices. Then, on a new line, provide the final refined translation, and nothing else, prefixed with 'Translation:'.\n\nRefine these translations of '{original_text}':\n{draft_list}",
+    "params": {
+      "temperature": 0.7,
+      "top_p": 0.9,
+      "top_k": 40,
+      "max_tokens": 2048
+    }
+  },
+  "specific-model-name": {
+    "prompt_template": "Translate this specific text into English:\n{text}",
+    "params": {
+      "temperature": 0.85,
+      "top_p": 1.0
+    }
+  },
+  "another-model": {
+    "inherits": "_default",
+    "params": {
+      "temperature": 0.9
+    }
+  }
+}
