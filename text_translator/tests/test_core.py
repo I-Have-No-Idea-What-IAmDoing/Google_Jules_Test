@@ -113,6 +113,7 @@ class TestCoreWorkflow(unittest.TestCase):
              patch('custom_xml_parser.parser.deserialize') as mock_deserialize, \
              patch('text_translator.translator_lib.core.collect_text_nodes') as mock_collect, \
              patch('text_translator.translator_lib.translation._api_request') as mock_api_request, \
+             patch('text_translator.translator_lib.translation.ensure_model_loaded'), \
              patch('time.sleep'):
 
             input_text = "single line"
@@ -223,7 +224,7 @@ class TestGetTranslation(unittest.TestCase):
     def test_get_translation_retry_on_invalid(self):
         """Test that get_translation retries if the first result is invalid."""
         with patch('text_translator.translator_lib.translation._api_request') as mock_api_request, \
-             patch('text_translator.translator_lib.validation.is_translation_valid', side_effect=[False, True]):
+             patch('text_translator.translator_lib.translation.is_translation_valid', side_effect=[False, True]):
 
             mock_api_request.return_value = {"choices": [{"text": "translated"}]}
             translation.get_translation("text", "model", "http://test.url", self.model_config)
@@ -232,7 +233,7 @@ class TestGetTranslation(unittest.TestCase):
     def test_get_translation_raises_error_on_persistent_invalid(self):
         """Test that get_translation raises ValueError if the translation is always invalid."""
         with patch('text_translator.translator_lib.translation._api_request') as mock_api_request, \
-             patch('text_translator.translator_lib.validation.is_translation_valid', return_value=False):
+             patch('text_translator.translator_lib.translation.is_translation_valid', return_value=False):
 
             mock_api_request.return_value = {"choices": [{"text": "some invalid response"}]}
             with self.assertRaisesRegex(ValueError, "Failed to get a valid translation"):
