@@ -66,6 +66,8 @@ def process_directory(args: argparse.Namespace, options: 'TranslationOptions') -
 from translator_lib.options import TranslationOptions
 __version__ = "1.1.0"
 
+from translator_lib import model_loader
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Translate text in files from Japanese to English.",
@@ -74,7 +76,7 @@ def main() -> None:
 
     # --- Core Arguments ---
     parser.add_argument("input_path", help="Path to the input file or directory.")
-    parser.add_argument("--model", required=True, help="Main translation model name.")
+    parser.add_argument("--model", required=True, help="Main translation model name (must exist in models.json).")
     parser.add_argument("--output", help="Output file or directory path.")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite output if it exists.")
     parser.add_argument('--version', action='version', version=f'%(prog)s {__version__}')
@@ -94,6 +96,7 @@ def main() -> None:
     # --- Configuration ---
     config_group = parser.add_argument_group('Configuration')
     config_group.add_argument("--api-base-url", default=None, help="API base URL (env: OOBABOOGA_API_BASE_URL).")
+    config_group.add_argument("--models-file", default=os.path.join(os.path.dirname(__file__), 'models.json'), help="Path to the models JSON configuration file.")
     glossary_group = config_group.add_mutually_exclusive_group()
     glossary_group.add_argument("--glossary-file", help="Path to glossary file.")
     glossary_group.add_argument("--glossary-text", help="Glossary content as a string.")
@@ -116,6 +119,17 @@ def main() -> None:
         parser.error("--draft-model is required when using --refine.")
     if args.glossary_file and not os.path.exists(args.glossary_file):
         parser.error(f"Glossary file not found: {args.glossary_file}")
+
+    # --- Load Model Configurations ---
+    try:
+        all_model_configs = model_loader.load_model_configs(args.models_file)
+        main_model_config = model_loader.get_model_config(args.model, all_model_configs)
+        draft_model_config = {}
+        if args.draft_model:
+            draft_model_config = model_loader.get_model_config(args.draft_model, all_model_configs)
+    except model_loader.ModelConfigError as e:
+        parser.error(str(e))
+
 
     # --- Glossary Processing ---
     glossary_text = args.glossary_text
@@ -146,7 +160,9 @@ def main() -> None:
         overwrite=args.overwrite,
         verbose=args.verbose,
         quiet=args.quiet,
-        debug=args.debug
+        debug=args.debug,
+        model_config=main_model_config,
+        draft_model_config=draft_model_config,
     )
 
     # --- Path Processing ---

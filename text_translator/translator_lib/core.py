@@ -153,18 +153,25 @@ def is_translation_valid(original_text: str, translated_text: str, debug: bool =
 
     return True
 
-def get_translation(text: str, model_name: str, api_base_url: str, glossary_text: Optional[str] = None, debug: bool = False, use_reasoning: bool = False, line_by_line: bool = False) -> str:
+def get_translation(
+    text: str,
+    model_name: str,
+    api_base_url: str,
+    model_config: Dict[str, Any],
+    glossary_text: Optional[str] = None,
+    debug: bool = False,
+    use_reasoning: bool = False,
+    line_by_line: bool = False
+) -> str:
     """
     Gets a translation for a single piece of text, with retries.
     """
     if use_reasoning:
-        prompt = (
-            "First, provide a step-by-step reasoning for your translation, including cultural nuances and grammar points. "
-            "Then, on a new line, provide the final translation, and nothing else, prefixed with 'Translation:'.\n\n"
-            f"Original text: {text}"
-        )
+        template = model_config.get("reasoning_prompt_template", "{text}")
+        prompt = template.format(text=text)
     else:
-        prompt = f"Translate the following segment into English, without additional explanation or commentary:\n\n{text}"
+        template = model_config.get("prompt_template", "{text}")
+        prompt = template.format(text=text)
 
     if glossary_text:
         prompt = f"Please use this glossary for context:\n{glossary_text}\n\n{prompt}"
@@ -172,7 +179,12 @@ def get_translation(text: str, model_name: str, api_base_url: str, glossary_text
     if debug:
         print(f"--- DEBUG: Translation Prompt ---\n{prompt}\n------------------------------------", file=sys.stderr)
 
-    payload = {"prompt": prompt, "model": model_name}
+    payload = {
+        "prompt": prompt,
+        "model": model_name,
+        **model_config.get("params", {})
+    }
+
     for attempt in range(3):
         try:
             response_data = _api_request("completions", payload, api_base_url, debug=debug)
@@ -249,6 +261,8 @@ def _get_refined_translation(
     original_text: str,
     draft_model: str,
     refine_model: str,
+    draft_model_config: Dict[str, Any],
+    refine_model_config: Dict[str, Any],
     num_drafts: int,
     api_base_url: str,
     glossary_text: Optional[str],
@@ -272,6 +286,7 @@ def _get_refined_translation(
             original_text,
             draft_model,
             api_base_url,
+            draft_model_config,
             glossary_text=draft_glossary,
             debug=debug,
             use_reasoning=use_draft_reasoning,
@@ -284,18 +299,20 @@ def _get_refined_translation(
     draft_list = "\n".join(f"{i+1}. ```{d}```" for i, d in enumerate(drafts))
 
     if use_refine_reasoning:
-        prompt = (
-            "First, provide a step-by-step reasoning for your translation refinement, explaining your choices. "
-            "Then, on a new line, provide the final refined translation, and nothing else, prefixed with 'Translation:'.\n\n"
-            f"Refine these translations of '{original_text}':\n{draft_list}"
-        )
+        template = refine_model_config.get("refine_reasoning_prompt_template", "Refine: {draft_list}")
+        prompt = template.format(original_text=original_text, draft_list=draft_list)
     else:
-        prompt = f"Refine these translations of '{original_text}':\n{draft_list}"
+        template = refine_model_config.get("refine_prompt_template", "Refine: {draft_list}")
+        prompt = template.format(original_text=original_text, draft_list=draft_list)
 
     if glossary_text and glossary_for in ['refine', 'all']:
         prompt = f"Please use this glossary for context:\n{glossary_text}\n\n{prompt}"
 
-    payload = {"prompt": prompt, "model": refine_model}
+    payload = {
+        "prompt": prompt,
+        "model": refine_model,
+        **refine_model_config.get("params", {})
+    }
     response_data = _api_request("completions", payload, api_base_url, debug=debug)
     full_response = response_data.get("choices", [{}])[0].get("text", "").strip()
 
@@ -359,6 +376,8 @@ def translate_file(options: TranslationOptions) -> str:
                             original_text=line,
                             draft_model=options.draft_model,
                             refine_model=options.model_name,
+                            draft_model_config=options.draft_model_config,
+                            refine_model_config=options.model_config,
                             num_drafts=options.num_drafts,
                             api_base_url=options.api_base_url,
                             glossary_text=options.glossary_text,
@@ -373,6 +392,7 @@ def translate_file(options: TranslationOptions) -> str:
                             text=line,
                             model_name=options.model_name,
                             api_base_url=options.api_base_url,
+                            model_config=options.model_config,
                             glossary_text=options.glossary_text,
                             debug=options.debug,
                             use_reasoning=(options.reasoning_for in ['main', 'all']),
@@ -386,6 +406,8 @@ def translate_file(options: TranslationOptions) -> str:
                         original_text=original_text,
                         draft_model=options.draft_model,
                         refine_model=options.model_name,
+                        draft_model_config=options.draft_model_config,
+                        refine_model_config=options.model_config,
                         num_drafts=options.num_drafts,
                         api_base_url=options.api_base_url,
                         glossary_text=options.glossary_text,
@@ -399,6 +421,7 @@ def translate_file(options: TranslationOptions) -> str:
                         text=original_text,
                         model_name=options.model_name,
                         api_base_url=options.api_base_url,
+                        model_config=options.model_config,
                         glossary_text=options.glossary_text,
                         debug=options.debug,
                         use_reasoning=(options.reasoning_for in ['main', 'all'])
