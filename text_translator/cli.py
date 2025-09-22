@@ -3,6 +3,21 @@ import os
 import sys
 from typing import Optional
 
+#- Fix: Allows the script to be run directly for easier development and use,
+#  by ensuring the package's modules can be found.
+if __name__ == "__main__" and not __package__:
+    # If run as a script, add the parent directory to the Python path
+    # to allow relative imports to work.
+    parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if parent_dir not in sys.path:
+        sys.path.insert(0, parent_dir)
+
+    # Temporarily adjust the package context to allow the imports to work
+    # as if the script were being run as a module.
+    import text_translator
+    __package__ = "text_translator"
+
+
 # Corrected imports to reflect the new modular structure
 from .translator_lib.core import translate_file
 from .translator_lib.options import TranslationOptions
