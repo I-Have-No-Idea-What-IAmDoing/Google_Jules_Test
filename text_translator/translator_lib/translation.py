@@ -1,8 +1,41 @@
 import time
+import re
+import sys
 from typing import Any, Dict, Optional
 
 from .api_client import _api_request, ensure_model_loaded
 from .validation import is_translation_valid
+
+def _extract_translation_from_response(response: str, debug: bool = False) -> str:
+    """
+    Extracts the final translation from a model's response.
+
+    This function processes the raw text output from the language model.
+    It first removes any 'thinking' blocks (e.g., <thinking>...</thinking>)
+    that the model might generate to explain its reasoning process.
+    Then, it looks for a "Translation:" marker and extracts the text following it.
+    If the marker is not found, it returns the cleaned response as is.
+
+    Args:
+        response: The raw response text from the model.
+        debug: If True, prints debugging information.
+
+    Returns:
+        The extracted and cleaned translation.
+    """
+    # Remove <thinking>...</thinking> blocks
+    cleaned_response = re.sub(r'<thinking>.*?</thinking>', '', response, flags=re.DOTALL).strip()
+
+    if 'Translation:' in cleaned_response:
+        if debug:
+            print(f"--- DEBUG: Extracting translation from response ---\n{cleaned_response}\n------------------------------------", file=sys.stderr)
+        _, translation = cleaned_response.rsplit('Translation:', 1)
+        return translation.strip()
+    else:
+        if debug:
+            print(f"--- DEBUG: 'Translation:' marker not found in response, returning cleaned response ---\n{cleaned_response}\n------------------------------------", file=sys.stderr)
+        return cleaned_response
+
 
 def get_translation(
     text: str,
@@ -59,14 +92,12 @@ def get_translation(
     for attempt in range(3):
         try:
             response_data = _api_request("completions", payload, api_base_url, debug=debug)
-            translated_text = response_data.get("choices", [{}])[0].get("text", "").strip()
+            raw_response = response_data.get("choices", [{}])[0].get("text", "").strip()
 
             if use_reasoning:
-                if 'Translation:' in translated_text:
-                    _, translated_text = translated_text.rsplit('Translation:', 1)
-                    translated_text = translated_text.strip()
-                else:
-                    translated_text = "" # Invalid response
+                translated_text = _extract_translation_from_response(raw_response, debug=debug)
+            else:
+                translated_text = raw_response
 
             if is_translation_valid(text, translated_text, debug=debug, line_by_line=line_by_line):
                 if debug:
@@ -172,16 +203,17 @@ def _get_refined_translation(
             full_response = response_data.get("choices", [{}])[0].get("text", "").strip()
 
             if use_refine_reasoning:
-                if 'Translation:' in full_response:
-                    _, refined_text = full_response.rsplit('Translation:', 1)
-                    refined_text = refined_text.strip()
-                else:
-                    if debug:
-                        print(f"--- DEBUG: Refine reasoning mode enabled, but 'Translation:' marker not found. Retrying...", file=sys.stderr)
-                    time.sleep(2 ** attempt)
-                    continue
+                refined_text = _extract_translation_from_response(full_response, debug=debug)
             else:
                 refined_text = full_response
+
+            # After extraction, if the result is empty and we were expecting a result,
+            # it means the extraction failed or the model returned an empty response.
+            if use_refine_reasoning and not refined_text:
+                if debug:
+                    print(f"--- DEBUG: Refine reasoning mode enabled, but extraction resulted in empty string. Retrying...", file=sys.stderr)
+                time.sleep(2 ** attempt)
+                continue
 
             if not is_translation_valid(original_text, refined_text, debug=debug, line_by_line=line_by_line):
                 if debug:

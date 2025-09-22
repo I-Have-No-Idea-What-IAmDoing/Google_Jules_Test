@@ -240,6 +240,44 @@ class TestGetTranslation(unittest.TestCase):
                 translation.get_translation("original text", "model", "http://test.url", self.model_config)
             self.assertEqual(mock_api_request.call_count, 3)
 
+
+class TestTranslationExtraction(unittest.TestCase):
+    def test_extract_with_translation_marker(self):
+        """Test extraction when 'Translation:' marker is present."""
+        response = "Thinking about it...\nTranslation: This is the final text."
+        result = translation._extract_translation_from_response(response)
+        self.assertEqual(result, "This is the final text.")
+
+    def test_extract_with_thinking_tags(self):
+        """Test that <thinking> tags are correctly removed."""
+        response = "<thinking>This is my thought process.</thinking>Translation: This is the translation."
+        result = translation._extract_translation_from_response(response)
+        self.assertEqual(result, "This is the translation.")
+
+    def test_extract_no_marker(self):
+        """Test extraction when no 'Translation:' marker is present."""
+        response = "This is just a direct translation."
+        result = translation._extract_translation_from_response(response)
+        self.assertEqual(result, "This is just a direct translation.")
+
+    def test_extract_empty_response(self):
+        """Test extraction with an empty response."""
+        response = ""
+        result = translation._extract_translation_from_response(response)
+        self.assertEqual(result, "")
+
+    def test_extract_with_only_thinking_tags(self):
+        """Test extraction with only thinking tags."""
+        response = "<thinking>I am thinking.</thinking>"
+        result = translation._extract_translation_from_response(response)
+        self.assertEqual(result, "")
+
+    def test_extract_marker_inside_thinking_tag(self):
+        """Test that the marker is ignored if inside a thinking tag."""
+        response = "<thinking>Translation: this should be ignored</thinking>"
+        result = translation._extract_translation_from_response(response)
+        self.assertEqual(result, "")
+
 class TestApiAndModelHelpers(unittest.TestCase):
     def test_api_request_debug_printing(self):
         with patch('requests.post') as mock_post, \
