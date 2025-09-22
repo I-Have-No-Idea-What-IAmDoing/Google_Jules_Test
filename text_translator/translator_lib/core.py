@@ -17,18 +17,17 @@ DEFAULT_API_BASE_URL: str = "http://127.0.0.1:5000/v1"
 
 # --- API Communication & Model Management ---
 
-def check_server_status(api_base_url: str, debug: int = 0) -> None:
+def check_server_status(api_base_url: str, debug: bool = False) -> None:
     """
     Checks if the API server is running by making a simple request.
     Exits the program if the server is not available.
     """
-    if debug >= 1:
-        print(f"--- DEBUG (L1): Checking server status at {api_base_url} ---", file=sys.stderr)
+    if debug:
+        print(f"--- DEBUG: Checking server status at {api_base_url} ---", file=sys.stderr)
     try:
-        # Use a lightweight endpoint that is likely to exist.
         _api_request("internal/model/info", {}, api_base_url, is_get=True, timeout=10, debug=debug)
-        if debug >= 1:
-            print(f"--- DEBUG (L1): Server is active. ---", file=sys.stderr)
+        if debug:
+            print(f"--- DEBUG: Server is active. ---", file=sys.stderr)
     except ConnectionError:
         print(
             f"\n---FATAL ERROR---\n"
@@ -40,15 +39,14 @@ def check_server_status(api_base_url: str, debug: int = 0) -> None:
         sys.exit(1)
 
 
-def _api_request(endpoint: str, payload: Dict[str, Any], api_base_url: str, timeout: int = 60, is_get: bool = False, debug: int = 0) -> Dict[str, Any]:
+def _api_request(endpoint: str, payload: Dict[str, Any], api_base_url: str, timeout: int = 60, is_get: bool = False, debug: bool = False) -> Dict[str, Any]:
     """
     Internal helper to send a request to the API, handling exceptions.
     """
     headers = {"Content-Type": "application/json"}
-    if debug >= 1:
-        print(f"\n--- DEBUG (L1): API Request to endpoint: {endpoint} ---", file=sys.stderr)
-    if debug >= 3:
-        print(f"--- DEBUG (L3): API Request Payload ---\n{json.dumps(payload, indent=2)}\n-------------------------------------", file=sys.stderr)
+    if debug:
+        print(f"\n--- DEBUG: API Request to endpoint: {endpoint} ---", file=sys.stderr)
+        print(f"--- DEBUG: API Request Payload ---\n{json.dumps(payload, indent=2)}\n-------------------------------------", file=sys.stderr)
 
     try:
         if is_get:
@@ -58,25 +56,17 @@ def _api_request(endpoint: str, payload: Dict[str, Any], api_base_url: str, time
         response.raise_for_status()
         response_data = response.json()
 
-        if debug >= 3:
-            print(f"--- DEBUG (L3): API Response ---\n{json.dumps(response_data, indent=2)}\n--------------------------------", file=sys.stderr)
+        if debug:
+            print(f"--- DEBUG: API Response ---\n{json.dumps(response_data, indent=2)}\n--------------------------------", file=sys.stderr)
 
         return response_data
     except requests.exceptions.RequestException as e:
         raise ConnectionError(f"API request to {endpoint} failed: {e}")
 
-def ensure_model_loaded(model_name: str, api_base_url: str, verbose: bool = False, debug: int = 0) -> None:
+
+def ensure_model_loaded(model_name: str, api_base_url: str, verbose: bool = False, debug: bool = False) -> None:
     """
     Checks if the correct model is loaded on the server and loads it if not.
-
-    Args:
-        model_name (str): The name of the model that should be loaded.
-        api_base_url (str): The base URL of the API.
-        verbose (bool): If True, prints status messages.
-        debug (int): The debug level for logging.
-
-    Raises:
-        ConnectionError: If API calls to check or load the model fail.
     """
     try:
         current_model_data = _api_request("internal/model/info", {}, api_base_url, is_get=True, debug=debug)
@@ -96,88 +86,76 @@ def ensure_model_loaded(model_name: str, api_base_url: str, verbose: bool = Fals
 
 # --- Translation Logic ---
 
-def is_translation_valid(original_text: str, translated_text: str, debug: int = 0, line_by_line: bool = False) -> bool:
+def is_translation_valid(original_text: str, translated_text: str, debug: bool = False, line_by_line: bool = False) -> bool:
     """
     Validates the translated text against a set of heuristics.
     """
-    # 1. Check for empty or whitespace-only translation
-    if not translated_text.strip():
-        if debug >= 1: print(f"--- DEBUG (L1): Validation failed: Translation is empty.", file=sys.stderr)
+    cleaned_translation = translated_text.strip()
+    cleaned_original = original_text.strip()
+
+    # --- Basic Checks ---
+    if not cleaned_translation or cleaned_translation.lower() == cleaned_original.lower():
+        if debug: print(f"--- DEBUG: Validation failed: Translation is empty or identical to original.", file=sys.stderr)
         return False
 
-    # 2. Check for identity with the original text
-    if translated_text.strip() == original_text.strip():
-        if debug >= 1: print(f"--- DEBUG (L1): Validation failed: Translation is identical to original.", file=sys.stderr)
-        return False
-
-    # 3. Check for common model refusal phrases
+    # --- Content-based Checks ---
     refusal_phrases = ["i'm sorry", "i cannot", "i am unable", "as an ai"]
-    if any(phrase in translated_text.lower() for phrase in refusal_phrases):
-        if debug >= 1: print(f"--- DEBUG (L1): Validation failed: Translation contains a refusal phrase.", file=sys.stderr)
+    if any(phrase in cleaned_translation.lower() for phrase in refusal_phrases):
+        if debug: print(f"--- DEBUG: Validation failed: Translation contains a refusal phrase.", file=sys.stderr)
         return False
 
-    # 4. Check if the translation is in English
+    # --- Language and Character Checks ---
     try:
-        lang = detect(translated_text)
-        if lang != 'en':
-            if debug >= 1: print(f"--- DEBUG (L1): Validation failed: Translation is not in English (detected: {lang}).", file=sys.stderr)
+        if detect(cleaned_translation) != 'en':
+            if debug: print(f"--- DEBUG: Validation failed: Translation is not in English.", file=sys.stderr)
             return False
     except LangDetectException:
-        # If language detection fails, assume it's valid to avoid false positives
-        if debug >= 2: print(f"--- DEBUG (L2): Language detection failed. Assuming valid.", file=sys.stderr)
-        pass
+        if debug: print(f"--- DEBUG: Language detection failed, assuming valid.", file=sys.stderr)
 
-    # 5. Check if the translation contains the original text (for longer strings)
-    # This is a strong indicator of the model simply repeating the input.
-    if len(original_text) > 15 and original_text.lower() in translated_text.lower():
-        if debug >= 1: print(f"--- DEBUG (L1): Validation failed: Translation contains original text.", file=sys.stderr)
+    if re.search(r'[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f]', cleaned_translation):
+        if debug: print(f"--- DEBUG: Validation failed: Translation contains Japanese characters.", file=sys.stderr)
         return False
 
-    # 6. Check for multiple lines when in line-by-line mode
-    if line_by_line and len(translated_text.strip().splitlines()) > 1:
-        if debug >= 1: print(f"--- DEBUG (L1): Validation failed: Translation contains multiple lines in line-by-line mode.", file=sys.stderr)
+    # --- Structural and Repetition Checks ---
+    if line_by_line and len(cleaned_translation.splitlines()) > 1:
+        if debug: print(f"--- DEBUG: Validation failed: Translation contains multiple lines in line-by-line mode.", file=sys.stderr)
         return False
 
-    # 7. Check for untranslated Japanese characters
-    if re.search(r'[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f]', translated_text):
-        if debug >= 1: print(f"--- DEBUG (L1): Validation failed: Translation contains Japanese characters.", file=sys.stderr)
-        return False
-
-    # 8. Check for excessive repetition
-    words = translated_text.lower().split()
+    words = cleaned_translation.lower().split()
     if len(words) > 10:
         word_counts = Counter(words)
-        most_common_word_count = word_counts.most_common(1)[0][1]
-        if most_common_word_count / len(words) > 0.4:
-            if debug >= 1: print(f"--- DEBUG (L1): Validation failed: Translation may be excessively repetitive.", file=sys.stderr)
+        if (word_counts.most_common(1)[0][1] / len(words)) > 0.4:
+            if debug: print(f"--- DEBUG: Validation failed: Translation may be excessively repetitive.", file=sys.stderr)
             return False
 
-    # 9. Check for placeholder/template text
-    placeholder_patterns = [r'\[translation here\]', r'placeholder', r'\[\.\.\.\]']
-    if any(re.search(p, translated_text, re.IGNORECASE) for p in placeholder_patterns):
-        if debug >= 1: print(f"--- DEBUG (L1): Validation failed: Translation contains placeholder text.", file=sys.stderr)
+    # --- Advanced Heuristics ---
+    # Check if the translation contains the original text (for longer strings)
+    if len(cleaned_original) > 20 and cleaned_original.lower() in cleaned_translation.lower():
+        if debug: print(f"--- DEBUG: Validation failed: Translation contains the original text.", file=sys.stderr)
         return False
 
-    # 10. Check length ratio (len_translated / len_original)
-    # Allow a wide range (0.3x to 3.0x) to account for language differences.
-    # Only apply to reasonably long strings to avoid noise.
-    if len(original_text) > 10:
-        ratio = len(translated_text) / len(original_text)
-        if not (0.3 < ratio < 3.0):
-            if debug >= 1: print(f"--- DEBUG (L1): Validation failed: Translation length ratio ({ratio:.2f}) is outside the 0.3-3.0 range.", file=sys.stderr)
+    # Check for placeholder text
+    if any(re.search(p, cleaned_translation, re.IGNORECASE) for p in [r'\[translation here\]', r'placeholder', r'\[\.\.\.\]']):
+        if debug: print(f"--- DEBUG: Validation failed: Translation contains placeholder text.", file=sys.stderr)
+        return False
+
+    # Check length ratio, but only for reasonably long strings
+    if len(cleaned_original) >= 15:
+        ratio = len(cleaned_translation) / len(cleaned_original)
+        if not (0.3 < ratio < 3.5):
+            if debug: print(f"--- DEBUG: Validation failed: Translation length ratio ({ratio:.2f}) is outside the 0.3-3.5 range.", file=sys.stderr)
             return False
 
-    # 11. Check for leftover XML/HTML tags
-    if re.search(r'<[^>]+>', translated_text):
-        if debug >= 1: print(f"--- DEBUG (L1): Validation failed: Translation contains XML/HTML tags.", file=sys.stderr)
+    # Check for leftover XML/HTML tags that aren't part of the original
+    if re.search(r'<[^>]+>', cleaned_translation) and not re.search(r'<[^>]+>', cleaned_original):
+        if debug: print(f"--- DEBUG: Validation failed: Translation contains new XML/HTML tags.", file=sys.stderr)
         return False
 
     return True
 
-def get_translation(text: str, model_name: str, api_base_url: str, glossary_text: Optional[str] = None, debug: int = 0, use_reasoning: bool = False, line_by_line: bool = False, **kwargs: Any) -> str:
+def get_translation(text: str, model_name: str, api_base_url: str, glossary_text: Optional[str] = None, debug: bool = False, use_reasoning: bool = False, line_by_line: bool = False) -> str:
     """
     Gets a translation for a single piece of text, with retries.
-    This is the simplest translation function, used for drafts and direct mode.
     """
     if use_reasoning:
         prompt = (
@@ -191,8 +169,8 @@ def get_translation(text: str, model_name: str, api_base_url: str, glossary_text
     if glossary_text:
         prompt = f"Please use this glossary for context:\n{glossary_text}\n\n{prompt}"
 
-    if debug >= 2:
-        print(f"--- DEBUG (L2): Translation Prompt ---\n{prompt}\n------------------------------------", file=sys.stderr)
+    if debug:
+        print(f"--- DEBUG: Translation Prompt ---\n{prompt}\n------------------------------------", file=sys.stderr)
 
     payload = {"prompt": prompt, "model": model_name}
     for attempt in range(3):
@@ -205,28 +183,28 @@ def get_translation(text: str, model_name: str, api_base_url: str, glossary_text
                     _, translated_text = full_response.rsplit('Translation:', 1)
                     translated_text = translated_text.strip()
                 else:
-                    if debug >= 1:
-                        print(f"--- DEBUG (L1): Reasoning mode enabled, but 'Translation:' marker not found. Retrying...", file=sys.stderr)
+                    if debug:
+                        print(f"--- DEBUG: Reasoning mode enabled, but 'Translation:' marker not found. Retrying...", file=sys.stderr)
                     time.sleep(2 ** attempt)
                     continue
             else:
                 translated_text = full_response
 
-            if not is_translation_valid(text, translated_text, debug, line_by_line=line_by_line):
-                if debug >= 1:
-                    print(f"--- DEBUG (L1): Translation failed validation. Retrying... (Attempt {attempt + 1}/3)", file=sys.stderr)
+            if not is_translation_valid(text, translated_text, debug=debug, line_by_line=line_by_line):
+                if debug:
+                    print(f"--- DEBUG: Translation failed validation. Retrying... (Attempt {attempt + 1}/3)", file=sys.stderr)
                 time.sleep(2 ** attempt)
                 continue
 
-            if debug >= 1:
-                print(f"--- DEBUG (L1): Translation Result ---\n{translated_text}\n------------------------------------", file=sys.stderr)
+            if debug:
+                print(f"--- DEBUG: Translation Result ---\n{translated_text}\n------------------------------------", file=sys.stderr)
             return translated_text
         except ConnectionError as e:
             if attempt < 2:
                 time.sleep(2 ** attempt)
             else:
                 raise e
-    raise ValueError("Failed to get a valid translation after 3 attempts")
+    raise ValueError(f"Failed to get a valid translation for '{text[:50]}...' after 3 attempts")
 
 # --- Data Processing & Workflow ---
 
@@ -277,7 +255,7 @@ def _get_refined_translation(
     glossary_for: str,
     reasoning_for: Optional[str],
     verbose: bool,
-    debug: int,
+    debug: bool,
     line_by_line: bool = False
 ) -> str:
     """
@@ -289,7 +267,17 @@ def _get_refined_translation(
     # 1. Generate Drafts
     ensure_model_loaded(draft_model, api_base_url, verbose, debug=debug)
     draft_glossary = glossary_text if glossary_for in ['draft', 'all'] else None
-    drafts = [get_translation(original_text, draft_model, api_base_url, glossary_text=draft_glossary, debug=debug, use_reasoning=use_draft_reasoning, line_by_line=line_by_line) for _ in range(num_drafts)]
+    drafts = [
+        get_translation(
+            original_text,
+            draft_model,
+            api_base_url,
+            glossary_text=draft_glossary,
+            debug=debug,
+            use_reasoning=use_draft_reasoning,
+            line_by_line=line_by_line
+        ) for _ in range(num_drafts)
+    ]
 
     # 2. Refine Drafts
     ensure_model_loaded(refine_model, api_base_url, verbose, debug=debug)
@@ -316,8 +304,8 @@ def _get_refined_translation(
             _, refined_text = full_response.rsplit('Translation:', 1)
             refined_text = refined_text.strip()
         else:
-            if debug >= 1:
-                print(f"--- DEBUG (L1): Refine reasoning mode enabled, but 'Translation:' marker not found. Using full response.", file=sys.stderr)
+            if debug:
+                print(f"--- DEBUG: Refine reasoning mode enabled, but 'Translation:' marker not found. Using full response.", file=sys.stderr)
             refined_text = full_response
     else:
         refined_text = full_response
@@ -325,32 +313,19 @@ def _get_refined_translation(
     return refined_text or original_text
 
 
-def translate_file(**args: Any) -> str:
+from .options import TranslationOptions
+
+def translate_file(options: TranslationOptions) -> str:
     """
     The main orchestrator function for the entire translation process.
     Handles file I/O, batching, model loading, and progress display.
-
-    Args:
-        **args (dict): A dictionary of arguments from the CLI.
     """
-    # --- Argument Unpacking ---
-    input_path = args['input_path']
-    api_base_url = args.get('api_base_url', DEFAULT_API_BASE_URL)
-    glossary_text = args.get('glossary_text')
-    glossary_for = args.get('glossary_for', 'all')
-    debug_mode = args.get('debug', 0)
-    reasoning_for = args.get('reasoning_for')
-    verbose = args.get('verbose', False)
-    line_by_line = args.get('line_by_line', False)
-    refine_mode = args.get('refine_mode', False)
-    model_name = args.get('model_name')
-
     # --- File I/O and Setup ---
-    if args.get('output_file') and os.path.exists(args['output_file']) and not args.get('overwrite'):
-        if not args.get('quiet'): print(f"Output file {args['output_file']} already exists. Skipping.")
+    if options.output_path and os.path.exists(options.output_path) and not options.overwrite:
+        if not options.quiet: print(f"Output file {options.output_path} already exists. Skipping.")
         return ""
 
-    with open(input_path, 'r', encoding='utf-8') as f:
+    with open(options.input_path, 'r', encoding='utf-8') as f:
         content = f.read()
     data_structure = parser.deserialize(content)
 
@@ -358,78 +333,75 @@ def translate_file(**args: Any) -> str:
     collect_text_nodes(data_structure, nodes_to_translate)
 
     if not nodes_to_translate:
-        if not args.get('quiet'): print("No text to translate.")
+        if not options.quiet: print("No text to translate.")
         return parser.serialize(data_structure)
 
     # --- Pre-load model for direct mode to avoid reloading in loop ---
-    if not refine_mode:
-        ensure_model_loaded(model_name, api_base_url, verbose, debug=debug_mode)
+    if not options.refine_mode:
+        ensure_model_loaded(options.model_name, options.api_base_url, options.verbose, debug=options.debug)
 
     # --- Main Translation Loop ---
-    with tqdm(total=len(nodes_to_translate), desc="Translating", unit="node", disable=args.get('quiet')) as pbar:
+    with tqdm(total=len(nodes_to_translate), desc="Translating", unit="node", disable=options.quiet) as pbar:
         for node in nodes_to_translate:
             original_text = node['#text']
             translated_text = ""
 
-            if line_by_line:
-                had_trailing_newline = original_text.endswith('\n')
-                lines = original_text.splitlines()
+            if options.line_by_line:
+                lines = original_text.splitlines(True) # Keep endings
                 translated_lines = []
                 for line in lines:
                     if not line.strip():
                         translated_lines.append(line)
                         continue
 
-                    if refine_mode:
+                    if options.refine_mode:
                         translated_line = _get_refined_translation(
                             original_text=line,
-                            draft_model=args['draft_model'],
-                            refine_model=model_name,
-                            num_drafts=args.get('num_drafts', 6),
-                            api_base_url=api_base_url,
-                            glossary_text=glossary_text,
-                            glossary_for=glossary_for,
-                            reasoning_for=reasoning_for,
-                            verbose=verbose,
-                            debug=debug_mode,
+                            draft_model=options.draft_model,
+                            refine_model=options.model_name,
+                            num_drafts=options.num_drafts,
+                            api_base_url=options.api_base_url,
+                            glossary_text=options.glossary_text,
+                            glossary_for=options.glossary_for,
+                            reasoning_for=options.reasoning_for,
+                            verbose=options.verbose,
+                            debug=options.debug,
                             line_by_line=True
                         )
                     else: # Direct mode
                         translated_line = get_translation(
                             text=line,
-                            model_name=model_name,
-                            api_base_url=api_base_url,
-                            glossary_text=glossary_text,
-                            debug=debug_mode,
-                            use_reasoning=(reasoning_for in ['main', 'all']),
+                            model_name=options.model_name,
+                            api_base_url=options.api_base_url,
+                            glossary_text=options.glossary_text,
+                            debug=options.debug,
+                            use_reasoning=(options.reasoning_for in ['main', 'all']),
                             line_by_line=True
                         )
                     translated_lines.append(translated_line)
-                translated_text = "\n".join(translated_lines)
-                if had_trailing_newline and not translated_text.endswith('\n'):
-                    translated_text += '\n'
+                translated_text = "".join(translated_lines)
             else: # Translate entire node at once
-                if refine_mode:
+                if options.refine_mode:
                     translated_text = _get_refined_translation(
                         original_text=original_text,
-                        draft_model=args['draft_model'],
-                        refine_model=model_name,
-                        num_drafts=args.get('num_drafts', 6),
-                        api_base_url=api_base_url,
-                        glossary_text=glossary_text,
-                        glossary_for=glossary_for,
-                        reasoning_for=reasoning_for,
-                        verbose=verbose,
-                        debug=debug_mode
+                        draft_model=options.draft_model,
+                        refine_model=options.model_name,
+                        num_drafts=options.num_drafts,
+                        api_base_url=options.api_base_url,
+                        glossary_text=options.glossary_text,
+                        glossary_for=options.glossary_for,
+                        reasoning_for=options.reasoning_for,
+                        verbose=options.verbose,
+                        debug=options.debug
                     )
                 else: # Direct mode
                     translated_text = get_translation(
                         text=original_text,
-                        model_name=model_name,
-                        api_base_url=api_base_url,
-                        glossary_text=glossary_text,
-                        debug=debug_mode,
-                        use_reasoning=(reasoning_for in ['main', 'all'])
+                        model_name=options.model_name,
+                        api_base_url=options.api_base_url,
+                        glossary_text=options.glossary_text,
+                        debug=options.debug,
+                        use_reasoning=(options.reasoning_for in ['main', 'all'])
                     )
 
             node['#text'] = f"jp_text:::{translated_text or original_text}"
