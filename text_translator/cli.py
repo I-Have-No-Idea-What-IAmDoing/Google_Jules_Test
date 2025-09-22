@@ -1,12 +1,22 @@
 import argparse
 import os
 import sys
-import argparse
 from typing import Optional
 from translator_lib.core import translate_file, DEFAULT_API_BASE_URL, check_server_status
+from translator_lib.options import TranslationOptions
+from translator_lib import model_loader
+
+__version__ = "1.1.0"
 
 def process_single_file(input_file: str, output_file: Optional[str], options: 'TranslationOptions') -> None:
-    """Processes a single file."""
+    """
+    Manages the translation process for a single file.
+
+    Args:
+        input_file: The path to the input file.
+        output_file: The path to the output file (or None to print to stdout).
+        options: The TranslationOptions object with all settings.
+    """
     try:
         if not options.quiet:
             print(f"Starting translation for '{input_file}'...")
@@ -42,7 +52,13 @@ def process_single_file(input_file: str, output_file: Optional[str], options: 'T
         print(f"Error processing file {input_file}: {e}", file=sys.stderr)
 
 def process_directory(args: argparse.Namespace, options: 'TranslationOptions') -> None:
-    """Processes all files in a directory."""
+    """
+    Manages the translation process for an entire directory.
+
+    Args:
+        args: The parsed command-line arguments.
+        options: The TranslationOptions object with all settings.
+    """
     input_dir = args.input_path
     output_dir = args.output or f"{os.path.basename(input_dir)}_translated"
 
@@ -63,17 +79,18 @@ def process_directory(args: argparse.Namespace, options: 'TranslationOptions') -
                 output_file = os.path.join(output_dir, item)
                 process_single_file(input_file, output_file, options)
 
-from translator_lib.options import TranslationOptions
-__version__ = "1.1.0"
-
-from translator_lib import model_loader
-
 def main() -> None:
+    """Sets up the argument parser and orchestrates the translation process based on user input."""
     parser = argparse.ArgumentParser(
-        description="Translate text in files from Japanese to English.",
-        formatter_class=argparse.RawTextHelpFormatter
+        description="A command-line tool to translate text files from Japanese to English using a local LLM API.",
+        formatter_class=argparse.RawTextHelpFormatter,
+        epilog="Example usage:\n"
+               "  # Translate a single file\n"
+               "  python -m text_translator.cli my_file.txt --model 'my-model-name' --output my_file.eng.txt\n\n"
+               "  # Translate a whole directory in refinement mode\n"
+               "  python -m text_translator.cli ./my_dir --model 'refiner-model' --refine --draft-model 'draft-model'"
     )
-
+    
     # --- Core Arguments ---
     parser.add_argument("input_path", help="Path to the input file or directory.")
     parser.add_argument("--model", required=True, help="Main translation model name (must exist in models.json).")
@@ -96,19 +113,21 @@ def main() -> None:
     # --- Configuration ---
     config_group = parser.add_argument_group('Configuration')
     config_group.add_argument("--api-base-url", default=None, help="API base URL (env: OOBABOOGA_API_BASE_URL).")
+
     config_group.add_argument("--models-file", default=os.path.join(os.path.dirname(__file__), 'models.json'), help="Path to the models JSON configuration file.")
     glossary_group = config_group.add_mutually_exclusive_group()
-    glossary_group.add_argument("--glossary-file", help="Path to glossary file.")
-    glossary_group.add_argument("--glossary-text", help="Glossary content as a string.")
-    config_group.add_argument("--glossary-for", choices=['draft', 'refine', 'all'], default='all', help="Apply glossary to: draft, refine, or all (default).")
-    config_group.add_argument("--reasoning-for", choices=['draft', 'refine', 'main', 'all'], default=None, help="Enable reasoning for specific models.")
-    config_group.add_argument("--line-by-line", action="store_true", help="Translate line-by-line (may reduce quality).")
-    config_group.add_argument("--debug", action="store_true", help="Enable debug output.")
+    glossary_group.add_argument("--glossary-file", help="Path to a text file containing a glossary for context.")
+    glossary_group.add_argument("--glossary-text", help="A string containing glossary terms.")
+    config_group.add_argument("--glossary-for", choices=['draft', 'refine', 'all'], default='all', help="Apply glossary to: 'draft' model, 'refine' model, or 'all' (default).")
+    config_group.add_argument("--reasoning-for", choices=['draft', 'refine', 'main', 'all'], default=None, help="Enable step-by-step reasoning for specific model types.")
 
-    # --- Verbosity ---
-    verbosity_group = parser.add_mutually_exclusive_group()
-    verbosity_group.add_argument("--verbose", action="store_true", help="Enable detailed output.")
-    verbosity_group.add_argument("--quiet", action="store_true", help="Suppress informational output.")
+    # --- General & Info ---
+    info_group = parser.add_argument_group('General')
+    verbosity_group = info_group.add_mutually_exclusive_group()
+    verbosity_group.add_argument("--verbose", action="store_true", help="Enable verbose output, showing model loading and other details.")
+    verbosity_group.add_argument("--quiet", "-q", action="store_true", help="Suppress all informational output, printing only final results or errors.")
+    info_group.add_argument("--debug", action="store_true", help="Enable extensive debug output for troubleshooting.")
+    info_group.add_argument('--version', action='version', version=f'%(prog)s {__version__}')
 
     args = parser.parse_args()
 

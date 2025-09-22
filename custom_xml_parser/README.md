@@ -8,6 +8,10 @@ The format has the following characteristics:
 - Tag groups are defined by `<TagName>` and `</TagName>`.
 - The data is hierarchical, and the order of fields within a group does not matter.
 
+## Comment Handling
+
+A key feature of this parser is that it preserves comments. Comments are associated with the tag they precede and are stored in a special `"#comments"` key. This allows for round-trip serialization without losing documentation.
+
 ## Data Structure
 
 The `deserialize` function converts the custom format into a nested Python dictionary. Text content within a tag is stored under a special `"#text"` key.
@@ -26,9 +30,12 @@ To parse a string in the custom format, use the `deserialize` function.
 from parser import deserialize
 
 data_string = """
+# This is a file header comment.
+
+# This comment is for MyAction.
 [MyAction]
     <Settings>
-        mode a
+        mode a  # This is an inline comment.
         <level>5</level>
     </Settings>
 [/MyAction]
@@ -38,7 +45,9 @@ parsed_data = deserialize(data_string)
 print(parsed_data)
 # Output:
 # {
+#     '#comments': ['This is a file header comment.'],
 #     'MyAction': {
+#         '#comments': ['This comment is for MyAction.'],
 #         'Settings': {
 #             '#text': 'mode a',
 #             'level': {
