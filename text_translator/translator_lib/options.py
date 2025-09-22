@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 
 @dataclass
 class TranslationOptions:
@@ -21,3 +21,6 @@ class TranslationOptions:
     verbose: bool = False
     quiet: bool = False
     debug: bool = False
+    # New fields for model configurations
+    model_config: Dict[str, Any] = field(default_factory=dict)
+    draft_model_config: Dict[str, Any] = field(default_factory=dict)
