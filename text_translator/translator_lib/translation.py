@@ -57,21 +57,31 @@ def get_translation(
     }
 
     for attempt in range(3):
-        response_data = _api_request("completions", payload, api_base_url, debug=debug)
-        translated_text = response_data.get("choices", [{}])[0].get("text", "").strip()
+        try:
+            response_data = _api_request("completions", payload, api_base_url, debug=debug)
+            translated_text = response_data.get("choices", [{}])[0].get("text", "").strip()
 
-        if use_reasoning:
-            if 'Translation:' in translated_text:
-                _, translated_text = translated_text.rsplit('Translation:', 1)
-                translated_text = translated_text.strip()
+            if use_reasoning:
+                if 'Translation:' in translated_text:
+                    _, translated_text = translated_text.rsplit('Translation:', 1)
+                    translated_text = translated_text.strip()
+                else:
+                    translated_text = "" # Invalid response
+
+            if is_translation_valid(text, translated_text, debug=debug, line_by_line=line_by_line):
+                if debug:
+                    print(f"--- DEBUG: Translation Result ---\n{translated_text}\n------------------------------------", file=sys.stderr)
+                return translated_text
+
+            if debug:
+                print(f"--- DEBUG: Translation failed validation. Retrying... (Attempt {attempt + 1}/3)", file=sys.stderr)
+
+        except ConnectionError as e:
+            if attempt < 2:
+                print(f"--- DEBUG: Connection error. Retrying... (Attempt {attempt + 1}/3)", file=sys.stderr)
+                time.sleep(2 ** attempt)
             else:
-                translated_text = "" # Invalid response
-
-        if is_translation_valid(text, translated_text, debug=debug, line_by_line=line_by_line):
-            return translated_text
-
-        if attempt < 2:
-            time.sleep(2 ** attempt)
+                raise e
     raise ValueError(f"Failed to get a valid translation for '{text[:50]}...' after 3 attempts")
 
 
