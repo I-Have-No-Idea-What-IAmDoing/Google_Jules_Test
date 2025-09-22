@@ -23,10 +23,15 @@ class TestCommandLineInterface(unittest.TestCase):
         """Clean up the temporary directory."""
         shutil.rmtree(self.test_dir)
 
+    @patch('text_translator.cli.model_loader')
     @patch('text_translator.cli.check_server_status')
     @patch('text_translator.cli.process_single_file')
-    def test_cli_single_file(self, mock_process_single_file, mock_check_server_status):
+    def test_cli_single_file(self, mock_process_single_file, mock_check_server_status, mock_model_loader):
         """Test the CLI with a single file input."""
+        # Setup mock for model_loader
+        mock_model_loader.load_model_configs.return_value = {"test-model": {"params": {}}}
+        mock_model_loader.get_model_config.return_value = {"params": {"temp": 0.5}}
+
         test_args = ["cli.py", self.input_file, "--model", "test-model"]
         with patch.object(sys, 'argv', test_args):
             cli.main()
@@ -38,11 +43,16 @@ class TestCommandLineInterface(unittest.TestCase):
         passed_options = mock_process_single_file.call_args[0][2]
         self.assertIsInstance(passed_options, TranslationOptions)
         self.assertEqual(passed_options.model_name, "test-model")
+        self.assertEqual(passed_options.model_config, {"params": {"temp": 0.5}})
 
+    @patch('text_translator.cli.model_loader')
     @patch('text_translator.cli.check_server_status')
     @patch('text_translator.cli.process_directory')
-    def test_cli_directory_processing(self, mock_process_directory, mock_check_server_status):
+    def test_cli_directory_processing(self, mock_process_directory, mock_check_server_status, mock_model_loader):
         """Test the CLI with a directory input."""
+        mock_model_loader.load_model_configs.return_value = {"test-model": {}}
+        mock_model_loader.get_model_config.return_value = {}
+
         test_args = ["cli.py", self.test_dir, "--model", "test-model", "--quiet"]
         with patch.object(sys, 'argv', test_args):
             cli.main()
@@ -64,10 +74,14 @@ class TestCommandLineInterface(unittest.TestCase):
 
         self.assertIn(cli.__version__, mock_stdout.getvalue())
 
+    @patch('text_translator.cli.model_loader')
     @patch('text_translator.cli.check_server_status')
     @patch('sys.stderr', new_callable=StringIO)
-    def test_cli_argument_validation_errors(self, mock_stderr, mock_check_server_status):
+    def test_cli_argument_validation_errors(self, mock_stderr, mock_check_server_status, mock_model_loader):
         """Test that the CLI exits on various argument validation errors."""
+        mock_model_loader.load_model_configs.return_value = {"r": {}, "m": {}}
+        mock_model_loader.get_model_config.return_value = {}
+
         # Refine without draft model
         test_args = ["cli.py", self.input_file, "--model", "r", "--refine"]
         with patch.object(sys, 'argv', test_args), self.assertRaises(SystemExit):
@@ -88,10 +102,14 @@ class TestCommandLineInterface(unittest.TestCase):
         cli.process_single_file(self.input_file, None, options)
         self.assertIn("Error processing file", mock_stderr.getvalue())
 
+    @patch('text_translator.cli.model_loader')
     @patch('text_translator.cli.check_server_status')
     @patch('text_translator.cli.process_single_file')
-    def test_cli_debug_flag(self, mock_process_single_file, mock_check_server_status):
+    def test_cli_debug_flag(self, mock_process_single_file, mock_check_server_status, mock_model_loader):
         """Test the CLI with the --debug flag."""
+        mock_model_loader.load_model_configs.return_value = {"test-model": {}}
+        mock_model_loader.get_model_config.return_value = {}
+
         test_args = ["cli.py", self.input_file, "--model", "test-model", "--debug"]
         with patch.object(sys, 'argv', test_args):
             cli.main()
@@ -99,10 +117,14 @@ class TestCommandLineInterface(unittest.TestCase):
         passed_options = mock_process_single_file.call_args[0][2]
         self.assertTrue(passed_options.debug)
 
+    @patch('text_translator.cli.model_loader')
     @patch('text_translator.cli.check_server_status')
     @patch('text_translator.cli.process_single_file')
-    def test_cli_reasoning_for_argument(self, mock_process_single_file, mock_check_server_status):
+    def test_cli_reasoning_for_argument(self, mock_process_single_file, mock_check_server_status, mock_model_loader):
         """Test the CLI with the --reasoning-for argument."""
+        mock_model_loader.load_model_configs.return_value = {"test-model": {}}
+        mock_model_loader.get_model_config.return_value = {}
+
         test_args = ["cli.py", self.input_file, "--model", "test-model", "--reasoning-for", "main"]
         with patch.object(sys, 'argv', test_args):
             cli.main()
@@ -111,10 +133,14 @@ class TestCommandLineInterface(unittest.TestCase):
         passed_options = mock_process_single_file.call_args[0][2]
         self.assertEqual(passed_options.reasoning_for, "main")
 
+    @patch('text_translator.cli.model_loader')
     @patch('text_translator.cli.check_server_status')
     @patch('text_translator.cli.process_directory')
-    def test_main_api_url_from_env(self, mock_process, mock_check_server_status):
+    def test_main_api_url_from_env(self, mock_process, mock_check_server_status, mock_model_loader):
         """Test that the API URL is taken from the environment variable."""
+        mock_model_loader.load_model_configs.return_value = {"m": {}}
+        mock_model_loader.get_model_config.return_value = {}
+
         test_args = ["cli.py", self.test_dir, "--model", "m"]
         with patch.dict(os.environ, {'OOBABOOGA_API_BASE_URL': 'http://env.url'}):
             with patch.object(sys, 'argv', test_args):
