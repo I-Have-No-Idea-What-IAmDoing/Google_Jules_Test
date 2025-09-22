@@ -126,14 +126,15 @@ class TestCoreWorkflow(unittest.TestCase):
             options.draft_model = "draft-model"
             options.num_drafts = 1
             options.line_by_line = True
+            # The draft and refine configs don't specify an endpoint, so they use the default (chat)
+            options.draft_model_config = {}
+            options.model_config = {}
 
-            invalid_refined_response = {"choices": [{"text": "this is the\nrefined translation"}]}
+
+            draft_response = {"choices": [{"message": {"content": "a valid single-line draft"}}]}
+            invalid_refined_response = {"choices": [{"message": {"content": "this is the\nrefined translation"}}]}
             mock_api_request.side_effect = [
-                {"model_name": "initial-model"},
-                {"result": "success"},
-                {"choices": [{"text": "a valid single-line draft"}]},
-                {"model_name": "draft-model"},
-                {"result": "success"},
+                draft_response,
                 invalid_refined_response,
                 invalid_refined_response,
                 invalid_refined_response,
@@ -186,13 +187,14 @@ class TestGetTranslation(unittest.TestCase):
         with patch('text_translator.translator_lib.translation._api_request') as mock_api_request, \
              patch('text_translator.translator_lib.validation.is_translation_valid', return_value=True):
 
-            mock_api_request.return_value = {"choices": [{"text": "translated"}]}
+            mock_api_request.return_value = {"choices": [{"message": {"content": "translated"}}]}
+            # This config has no endpoint, so it uses the default (chat)
             translation.get_translation("original", "test-model", "http://test.url", self.model_config)
 
             args, _ = mock_api_request.call_args
             payload = args[1]
 
-            self.assertEqual(payload['prompt'], "Translate: original")
+            self.assertEqual(payload['messages'][0]['content'], "Translate: original")
             self.assertEqual(payload['model'], "test-model")
             self.assertEqual(payload['temperature'], 0.1)
             self.assertEqual(payload['top_k'], 10)
@@ -203,22 +205,22 @@ class TestGetTranslation(unittest.TestCase):
              patch('text_translator.translator_lib.validation.is_translation_valid', return_value=True):
 
             mock_api_request.return_value = {
-                "choices": [{"text": "Reasoning: ...\nTranslation: translated"}]
+                "choices": [{"message": {"content": "Reasoning: ...\nTranslation: translated"}}]
             }
             translation.get_translation("original", "test-model", "http://test.url", self.model_config, use_reasoning=True)
 
             args, _ = mock_api_request.call_args
             payload = args[1]
-            self.assertEqual(payload['prompt'], "Reason and translate: original")
+            self.assertEqual(payload['messages'][0]['content'], "Reason and translate: original")
 
     def test_get_translation_with_glossary(self):
         """Test that a glossary is correctly added to the prompt."""
         with patch('text_translator.translator_lib.translation._api_request') as mock_api_request, \
              patch('text_translator.translator_lib.validation.is_translation_valid', return_value=True):
 
-            mock_api_request.return_value = {"choices": [{"text": "translated"}]}
+            mock_api_request.return_value = {"choices": [{"message": {"content": "translated"}}]}
             translation.get_translation("text", "model", "http://test.url", self.model_config, glossary_text="glossary")
-            prompt = mock_api_request.call_args[0][1]['prompt']
+            prompt = mock_api_request.call_args[0][1]['messages'][0]['content']
             self.assertIn("Please use this glossary", prompt)
 
     def test_get_translation_retry_on_invalid(self):
@@ -239,6 +241,42 @@ class TestGetTranslation(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Failed to get a valid translation"):
                 translation.get_translation("original text", "model", "http://test.url", self.model_config)
             self.assertEqual(mock_api_request.call_count, 3)
+
+    def test_get_translation_default_chat_endpoint(self):
+        """Test get_translation uses the chat endpoint by default."""
+        with patch('text_translator.translator_lib.translation._api_request') as mock_api_request, \
+             patch('text_translator.translator_lib.validation.is_translation_valid', return_value=True):
+
+            mock_api_request.return_value = {"choices": [{"message": {"content": "translated"}}]}
+            # model_config does not specify an endpoint, so it should use the new default
+            translation.get_translation("original", "chat-model", "http://test.url", self.model_config)
+
+            args, _ = mock_api_request.call_args
+            endpoint, payload = args[0], args[1]
+
+            self.assertEqual(endpoint, "chat/completions")
+            self.assertIn("messages", payload)
+            self.assertNotIn("prompt", payload)
+
+    def test_get_translation_legacy_completions_endpoint(self):
+        """Test get_translation uses the legacy completions endpoint when specified."""
+        legacy_config = {
+            "endpoint": "completions",
+            "prompt_template": "Translate for legacy: {text}",
+            "params": {"temperature": 0.3}
+        }
+        with patch('text_translator.translator_lib.translation._api_request') as mock_api_request, \
+             patch('text_translator.translator_lib.validation.is_translation_valid', return_value=True):
+
+            mock_api_request.return_value = {"choices": [{"text": "translated"}]}
+            translation.get_translation("original", "legacy-model", "http://test.url", legacy_config)
+
+            args, _ = mock_api_request.call_args
+            endpoint, payload = args[0], args[1]
+
+            self.assertEqual(endpoint, "completions")
+            self.assertIn("prompt", payload)
+            self.assertNotIn("messages", payload)
 
 
 class TestTranslationExtraction(unittest.TestCase):
