@@ -1,39 +1,75 @@
 import time
 import re
 import sys
+import json
 from typing import Any, Dict, Optional
 
 from .api_client import _api_request, ensure_model_loaded
 from .validation import is_translation_valid
 
-def _extract_translation_from_response(response: str, debug: bool = False) -> str:
+def _extract_translation_from_response(
+    response: str,
+    debug: bool = False,
+    use_json_format: bool = False
+) -> str:
     """
-    Extracts the final translation from a model's response.
+    Extracts the final translation from a model's response, supporting multiple formats.
 
-    This function processes the raw text output from the language model.
-    It first removes any 'thinking' blocks (e.g., <thinking>...</thinking>)
-    that the model might generate to explain its reasoning process.
-    Then, it looks for a "Translation:" marker and extracts the text following it.
-    If the marker is not found, it returns the cleaned response as is.
+    This function processes the raw text output from a language model. It attempts
+    extraction in the following order:
+    1.  If `use_json_format` is True, it tries to parse the response as JSON.
+        It looks for a 'translation' key in the JSON object. It also handles
+        cases where the JSON is wrapped in markdown code blocks.
+    2.  It removes any 'thinking' blocks (e.g., <thinking>...</thinking>).
+    3.  It looks for common markers (e.g., "Translation:", "Translated Text:")
+        and extracts the text following them.
+    4.  If no specific format is found, it returns the cleaned response as is.
 
     Args:
         response: The raw response text from the model.
         debug: If True, prints debugging information.
+        use_json_format: If True, the function will first attempt to parse the
+                         response as JSON.
 
     Returns:
         The extracted and cleaned translation.
     """
+    if use_json_format:
+        try:
+            # Handle cases where the JSON is wrapped in markdown ```json ... ```
+            if response.startswith("```json"):
+                response = response[7:-4].strip() # Remove ```json\n and \n```
+            elif response.startswith("```"):
+                 response = response[3:-3].strip()
+
+
+            data = json.loads(response)
+            if 'translation' in data and isinstance(data['translation'], str):
+                if debug:
+                    print(f"--- DEBUG: Extracted translation from JSON ---\n{data['translation']}\n------------------------------------", file=sys.stderr)
+                return data['translation']
+        except json.JSONDecodeError:
+            if debug:
+                print(f"--- DEBUG: JSON parsing failed, falling back to text extraction ---\n{response}\n------------------------------------", file=sys.stderr)
+
+    # Fallback to text-based extraction
     # Remove <thinking>...</thinking> blocks
     cleaned_response = re.sub(r'<thinking>.*?</thinking>', '', response, flags=re.DOTALL).strip()
 
-    if 'Translation:' in cleaned_response:
+    # Look for a marker and extract the text after it.
+    # The pattern looks for various common markers, case-insensitively.
+    marker_pattern = re.compile(r'(?:translation|translated text)\s*:\s*', re.IGNORECASE)
+    marker_match = marker_pattern.search(cleaned_response)
+
+    if marker_match:
         if debug:
-            print(f"--- DEBUG: Extracting translation from response ---\n{cleaned_response}\n------------------------------------", file=sys.stderr)
-        _, translation = cleaned_response.rsplit('Translation:', 1)
-        return translation.strip()
+            print(f"--- DEBUG: Extracting translation from response using marker ---\n{cleaned_response}\n------------------------------------", file=sys.stderr)
+        # Extract the text following the marker
+        translation = cleaned_response[marker_match.end():].strip()
+        return translation
     else:
         if debug:
-            print(f"--- DEBUG: 'Translation:' marker not found in response, returning cleaned response ---\n{cleaned_response}\n------------------------------------", file=sys.stderr)
+            print(f"--- DEBUG: No marker found, returning cleaned response ---\n{cleaned_response}\n------------------------------------", file=sys.stderr)
         return cleaned_response
 
 
@@ -95,7 +131,8 @@ def get_translation(
             raw_response = response_data.get("choices", [{}])[0].get("text", "").strip()
 
             if use_reasoning:
-                translated_text = _extract_translation_from_response(raw_response, debug=debug)
+                use_json = model_config.get("use_json_format", False)
+                translated_text = _extract_translation_from_response(raw_response, debug=debug, use_json_format=use_json)
             else:
                 translated_text = raw_response
 
@@ -203,7 +240,8 @@ def _get_refined_translation(
             full_response = response_data.get("choices", [{}])[0].get("text", "").strip()
 
             if use_refine_reasoning:
-                refined_text = _extract_translation_from_response(full_response, debug=debug)
+                use_json = refine_model_config.get("use_json_format", False)
+                refined_text = _extract_translation_from_response(full_response, debug=debug, use_json_format=use_json)
             else:
                 refined_text = full_response
 
