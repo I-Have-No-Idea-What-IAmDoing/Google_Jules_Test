@@ -59,13 +59,13 @@ def _extract_translation_from_response(
     # Look for a marker and extract the text after it.
     # The pattern looks for various common markers, case-insensitively.
     marker_pattern = re.compile(r'(?:translation|translated text)\s*:\s*', re.IGNORECASE)
-    match = marker_pattern.search(cleaned_response)
+    marker_match = marker_pattern.search(cleaned_response)
 
-    if match:
+    if marker_match:
         if debug:
             print(f"--- DEBUG: Extracting translation from response using marker ---\n{cleaned_response}\n------------------------------------", file=sys.stderr)
         # Extract the text following the marker
-        translation = cleaned_response[match.end():].strip()
+        translation = cleaned_response[marker_match.end():].strip()
         return translation
     else:
         if debug:
