@@ -107,6 +107,48 @@ class TestCoreWorkflow(unittest.TestCase):
     @patch('builtins.open')
     @patch('translator_lib.core.parser.deserialize')
     @patch('translator_lib.core.collect_text_nodes')
+    @patch('translator_lib.core._api_request')
+    @patch('time.sleep')
+    def test_refinement_fails_with_multiline_in_line_by_line_mode(self, mock_sleep, mock_api_request, mock_collect, mock_deserialize, mock_open, mock_exists):
+        """
+        Test that the fixed implementation raises a ValueError when the refined
+        translation is invalid in line-by-line mode.
+        """
+        # 1. Setup
+        input_text = "single line"
+        data_structure = {'root': {'#text': input_text}}
+        mock_deserialize.return_value = data_structure
+        mock_collect.side_effect = lambda data, lst: lst.extend([data['root']])
+
+        options = self.base_options
+        options.refine_mode = True
+        options.draft_model = "draft-model"
+        options.num_drafts = 1
+        options.line_by_line = True
+
+        # 2. Mock API responses
+        # This response is multi-line, which is invalid and should be rejected by the new logic.
+        invalid_refined_response = {"choices": [{"text": "this is the\nrefined translation"}]}
+
+        mock_api_request.side_effect = [
+            {"model_name": "initial-model"},
+            {"result": "success"},
+            {"choices": [{"text": "a valid single-line draft"}]},
+            {"model_name": "draft-model"},
+            {"result": "success"},
+            invalid_refined_response,
+            invalid_refined_response,
+            invalid_refined_response,
+        ]
+
+        # 3. Execute and Assert that the correct error is raised
+        with self.assertRaisesRegex(ValueError, "Failed to get a valid refined translation"):
+            core.translate_file(options)
+
+    @patch('os.path.exists', return_value=False)
+    @patch('builtins.open')
+    @patch('translator_lib.core.parser.deserialize')
+    @patch('translator_lib.core.collect_text_nodes')
     @patch('translator_lib.core.ensure_model_loaded')
     @patch('translator_lib.core.get_translation')
     def test_direct_translation_with_reasoning(self, mock_get_translation, mock_ensure_model, mock_collect, mock_deserialize, mock_open, mock_exists):
