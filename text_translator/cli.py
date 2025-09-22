@@ -2,9 +2,12 @@ import argparse
 import os
 import sys
 from typing import Optional
-from translator_lib.core import translate_file, DEFAULT_API_BASE_URL, check_server_status
-from translator_lib.options import TranslationOptions
-from translator_lib import model_loader
+
+# Corrected imports to reflect the new modular structure
+from .translator_lib.core import translate_file
+from .translator_lib.options import TranslationOptions
+from .translator_lib import model_loader
+from .translator_lib.api_client import check_server_status, DEFAULT_API_BASE_URL
 
 __version__ = "1.1.0"
 
@@ -120,6 +123,7 @@ def main() -> None:
     glossary_group.add_argument("--glossary-text", help="A string containing glossary terms.")
     config_group.add_argument("--glossary-for", choices=['draft', 'refine', 'all'], default='all', help="Apply glossary to: 'draft' model, 'refine' model, or 'all' (default).")
     config_group.add_argument("--reasoning-for", choices=['draft', 'refine', 'main', 'all'], default=None, help="Enable step-by-step reasoning for specific model types.")
+    config_group.add_argument("--line-by-line", action="store_true", help="Process files line by line instead of translating the whole content at once.")
 
     # --- General & Info ---
     info_group = parser.add_argument_group('General')
@@ -127,7 +131,6 @@ def main() -> None:
     verbosity_group.add_argument("--verbose", action="store_true", help="Enable verbose output, showing model loading and other details.")
     verbosity_group.add_argument("--quiet", "-q", action="store_true", help="Suppress all informational output, printing only final results or errors.")
     info_group.add_argument("--debug", action="store_true", help="Enable extensive debug output for troubleshooting.")
-    info_group.add_argument('--version', action='version', version=f'%(prog)s {__version__}')
 
     args = parser.parse_args()
 
