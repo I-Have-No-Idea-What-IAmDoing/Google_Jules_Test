@@ -19,8 +19,14 @@ DEFAULT_API_BASE_URL: str = "http://127.0.0.1:5000/v1"
 
 def check_server_status(api_base_url: str, debug: bool = False) -> None:
     """
-    Checks if the API server is running by making a simple request.
-    Exits the program if the server is not available.
+    Checks if the translation API server is running and available.
+
+    Sends a request to a known endpoint. If the request fails, it prints an
+    error message and terminates the program.
+
+    Args:
+        api_base_url: The base URL of the API server.
+        debug: If True, prints debug information for the check.
     """
     if debug:
         print(f"--- DEBUG: Checking server status at {api_base_url} ---", file=sys.stderr)
@@ -41,7 +47,26 @@ def check_server_status(api_base_url: str, debug: bool = False) -> None:
 
 def _api_request(endpoint: str, payload: Dict[str, Any], api_base_url: str, timeout: int = 60, is_get: bool = False, debug: bool = False) -> Dict[str, Any]:
     """
-    Internal helper to send a request to the API, handling exceptions.
+    Sends a request to the specified API endpoint and handles responses.
+
+    This is a low-level helper for communicating with the API. It wraps the
+    `requests` library to handle POST/GET requests, JSON serialization, and
+    common exceptions.
+
+    Args:
+        endpoint: The API endpoint to target (e.g., "completions").
+        payload: The dictionary to send as a JSON payload.
+        api_base_url: The base URL of the API server.
+        timeout: The request timeout in seconds.
+        is_get: If True, sends a GET request; otherwise, sends a POST request.
+        debug: If True, prints the request payload and response.
+
+    Returns:
+        The JSON response from the API as a dictionary.
+
+    Raises:
+        ConnectionError: If the request fails due to a network error or an
+                         unsuccessful HTTP status code.
     """
     headers = {"Content-Type": "application/json"}
     if debug:
@@ -66,7 +91,20 @@ def _api_request(endpoint: str, payload: Dict[str, Any], api_base_url: str, time
 
 def ensure_model_loaded(model_name: str, api_base_url: str, verbose: bool = False, debug: bool = False) -> None:
     """
-    Checks if the correct model is loaded on the server and loads it if not.
+    Ensures the specified model is loaded on the API server.
+
+    Queries the server for the currently loaded model. If it does not match
+    the desired model, this function sends a request to load the correct one
+    and waits for it to complete.
+
+    Args:
+        model_name: The name of the model that should be loaded.
+        api_base_url: The base URL of the API server.
+        verbose: If True, prints status messages about model switching.
+        debug: If True, passes debug flag to the underlying API request.
+
+    Raises:
+        ConnectionError: If it fails to get the current model or load the new one.
     """
     try:
         current_model_data = _api_request("internal/model/info", {}, api_base_url, is_get=True, debug=debug)
@@ -88,7 +126,23 @@ def ensure_model_loaded(model_name: str, api_base_url: str, verbose: bool = Fals
 
 def is_translation_valid(original_text: str, translated_text: str, debug: bool = False, line_by_line: bool = False) -> bool:
     """
-    Validates the translated text against a set of heuristics.
+    Validates a translation using a collection of heuristics.
+
+    This function checks for common failure modes of translation models, such as:
+    - Empty or identical translations.
+    - Refusal phrases (e.g., "I'm sorry, I cannot...").
+    - Non-English text or leftover Japanese characters.
+    - Excessive repetition or inclusion of the original text.
+    - Unreasonable length ratios between original and translated text.
+
+    Args:
+        original_text: The source text.
+        translated_text: The translated text to validate.
+        debug: If True, prints the reason for validation failure.
+        line_by_line: If True, enforces a single-line output check.
+
+    Returns:
+        True if the translation is deemed valid, False otherwise.
     """
     cleaned_translation = translated_text.strip()
     cleaned_original = original_text.strip()
@@ -153,18 +207,45 @@ def is_translation_valid(original_text: str, translated_text: str, debug: bool =
 
     return True
 
-def get_translation(text: str, model_name: str, api_base_url: str, glossary_text: Optional[str] = None, debug: bool = False, use_reasoning: bool = False, line_by_line: bool = False) -> str:
+def get_translation(
+    text: str,
+    model_name: str,
+    api_base_url: str,
+    model_config: Dict[str, Any],
+    glossary_text: Optional[str] = None,
+    debug: bool = False,
+    use_reasoning: bool = False,
+    line_by_line: bool = False
+) -> str:
     """
-    Gets a translation for a single piece of text, with retries.
+    Performs a single translation request with validation and retries.
+
+    This function constructs the appropriate prompt using templates from the
+    model configuration, sends it to the API, validates the response, and
+    retries if validation fails.
+
+    Args:
+        text: The text to translate.
+        model_name: The name of the model to use.
+        api_base_url: The base URL of the translation API.
+        model_config: The configuration dictionary for the specified model.
+        glossary_text: Optional glossary to provide context.
+        debug: If True, prints detailed debug information.
+        use_reasoning: If True, instructs the model to provide its reasoning.
+        line_by_line: If True, signals that the text is a single line.
+
+    Returns:
+        The validated translated text.
+
+    Raises:
+        ValueError: If a valid translation cannot be obtained after 3 attempts.
     """
     if use_reasoning:
-        prompt = (
-            "First, provide a step-by-step reasoning for your translation, including cultural nuances and grammar points. "
-            "Then, on a new line, provide the final translation, and nothing else, prefixed with 'Translation:'.\n\n"
-            f"Original text: {text}"
-        )
+        template = model_config.get("reasoning_prompt_template", "{text}")
+        prompt = template.format(text=text)
     else:
-        prompt = f"Translate the following segment into English, without additional explanation or commentary:\n\n{text}"
+        template = model_config.get("prompt_template", "{text}")
+        prompt = template.format(text=text)
 
     if glossary_text:
         prompt = f"Please use this glossary for context:\n{glossary_text}\n\n{prompt}"
@@ -172,7 +253,12 @@ def get_translation(text: str, model_name: str, api_base_url: str, glossary_text
     if debug:
         print(f"--- DEBUG: Translation Prompt ---\n{prompt}\n------------------------------------", file=sys.stderr)
 
-    payload = {"prompt": prompt, "model": model_name}
+    payload = {
+        "prompt": prompt,
+        "model": model_name,
+        **model_config.get("params", {})
+    }
+
     for attempt in range(3):
         try:
             response_data = _api_request("completions", payload, api_base_url, debug=debug)
@@ -210,12 +296,16 @@ def get_translation(text: str, model_name: str, api_base_url: str, glossary_text
 
 def collect_text_nodes(data: Union[Dict[str, Any], List[Any]], nodes_list: List[Dict[str, Any]]) -> None:
     """
-    Recursively traverses the data structure to find all text nodes that
-    need translation (non-English and not already processed).
+    Recursively finds all text nodes in the data structure that need translation.
+
+    A node needs translation if its key is `"#text"`, its value is a string,
+    it is not already marked as processed (with `jp_text:::`), and its language
+    is detected as non-English.
 
     Args:
-        data (dict or list): The data structure to traverse.
-        nodes_list (list): A list to which references of text nodes will be appended.
+        data: The nested dictionary or list to traverse.
+        nodes_list: A list to which the dictionaries containing text nodes
+                    (i.e., the parent dict of the '#text' key) are appended.
     """
     if isinstance(data, dict):
         for key, value in data.items():
@@ -232,7 +322,15 @@ def collect_text_nodes(data: Union[Dict[str, Any], List[Any]], nodes_list: List[
             collect_text_nodes(item, nodes_list)
 
 def cleanup_markers(data: Union[Dict[str, Any], List[Any]]) -> None:
-    """Recursively removes the 'jp_text:::' processing markers from the data."""
+    """
+    Recursively removes the 'jp_text:::' processing marker from all text nodes.
+
+    This is called after translation is complete to clean up the temporary
+    markers used to prevent re-translation.
+
+    Args:
+        data: The nested dictionary or list to clean.
+    """
     if isinstance(data, dict):
         for key, value in data.items():
             if key == "#text" and isinstance(value, str) and value.startswith("jp_text:::"):
@@ -249,6 +347,8 @@ def _get_refined_translation(
     original_text: str,
     draft_model: str,
     refine_model: str,
+    draft_model_config: Dict[str, Any],
+    refine_model_config: Dict[str, Any],
     num_drafts: int,
     api_base_url: str,
     glossary_text: Optional[str],
@@ -259,7 +359,31 @@ def _get_refined_translation(
     line_by_line: bool = False
 ) -> str:
     """
-    Gets a refined translation for a single piece of text.
+    Implements the refinement process for translating a single piece of text.
+
+    This process involves two main steps:
+    1.  **Drafting**: Generates a specified number of initial translations using
+        a 'draft' model.
+    2.  **Refining**: Feeds the draft translations to a 'refine' model, which
+        produces a final, higher-quality translation based on the drafts.
+
+    Args:
+        original_text: The text to translate.
+        draft_model: The name of the model to use for generating drafts.
+        refine_model: The name of the model to use for refining the drafts.
+        draft_model_config: The configuration for the draft model.
+        refine_model_config: The configuration for the refine model.
+        num_drafts: The number of drafts to generate.
+        api_base_url: The base URL of the translation API.
+        glossary_text: Optional glossary to provide context.
+        glossary_for: Specifies whether to use the glossary for 'draft', 'refine', or 'all'.
+        reasoning_for: Specifies whether to request reasoning from the 'draft', 'refine', or 'all' models.
+        verbose: If True, prints model loading messages.
+        debug: If True, prints detailed debug information.
+        line_by_line: If True, indicates that the text is a single line.
+
+    Returns:
+        The refined translation as a string.
     """
     use_draft_reasoning = reasoning_for in ['draft', 'all']
     use_refine_reasoning = reasoning_for in ['refine', 'all']
@@ -272,6 +396,7 @@ def _get_refined_translation(
             original_text,
             draft_model,
             api_base_url,
+            draft_model_config,
             glossary_text=draft_glossary,
             debug=debug,
             use_reasoning=use_draft_reasoning,
@@ -284,41 +409,76 @@ def _get_refined_translation(
     draft_list = "\n".join(f"{i+1}. ```{d}```" for i, d in enumerate(drafts))
 
     if use_refine_reasoning:
-        prompt = (
-            "First, provide a step-by-step reasoning for your translation refinement, explaining your choices. "
-            "Then, on a new line, provide the final refined translation, and nothing else, prefixed with 'Translation:'.\n\n"
-            f"Refine these translations of '{original_text}':\n{draft_list}"
-        )
+        template = refine_model_config.get("refine_reasoning_prompt_template", "Refine: {draft_list}")
+        prompt = template.format(original_text=original_text, draft_list=draft_list)
     else:
-        prompt = f"Refine these translations of '{original_text}':\n{draft_list}"
+        template = refine_model_config.get("refine_prompt_template", "Refine: {draft_list}")
+        prompt = template.format(original_text=original_text, draft_list=draft_list)
 
     if glossary_text and glossary_for in ['refine', 'all']:
         prompt = f"Please use this glossary for context:\n{glossary_text}\n\n{prompt}"
 
-    payload = {"prompt": prompt, "model": refine_model}
-    response_data = _api_request("completions", payload, api_base_url, debug=debug)
-    full_response = response_data.get("choices", [{}])[0].get("text", "").strip()
+    payload = {
+        "prompt": prompt,
+        "model": refine_model,
+        **refine_model_config.get("params", {})
+    }
 
-    if use_refine_reasoning:
-        if 'Translation:' in full_response:
-            _, refined_text = full_response.rsplit('Translation:', 1)
-            refined_text = refined_text.strip()
-        else:
-            if debug:
-                print(f"--- DEBUG: Refine reasoning mode enabled, but 'Translation:' marker not found. Using full response.", file=sys.stderr)
-            refined_text = full_response
-    else:
-        refined_text = full_response
+    for attempt in range(3):
+        try:
+            response_data = _api_request("completions", payload, api_base_url, debug=debug)
+            full_response = response_data.get("choices", [{}])[0].get("text", "").strip()
 
-    return refined_text or original_text
+            if use_refine_reasoning:
+                if 'Translation:' in full_response:
+                    _, refined_text = full_response.rsplit('Translation:', 1)
+                    refined_text = refined_text.strip()
+                else:
+                    if debug:
+                        print(f"--- DEBUG: Refine reasoning mode enabled, but 'Translation:' marker not found. Retrying...", file=sys.stderr)
+                    time.sleep(2 ** attempt)
+                    continue
+            else:
+                refined_text = full_response
+
+            if not is_translation_valid(original_text, refined_text, debug=debug, line_by_line=line_by_line):
+                if debug:
+                    print(f"--- DEBUG: Refined translation failed validation. Retrying... (Attempt {attempt + 1}/3)", file=sys.stderr)
+                time.sleep(2 ** attempt)
+                continue
+
+            return refined_text or original_text
+        except ConnectionError as e:
+            if attempt < 2:
+                time.sleep(2 ** attempt)
+            else:
+                raise e
+
+    raise ValueError(f"Failed to get a valid refined translation for '{original_text[:50]}...' after 3 attempts")
 
 
 from .options import TranslationOptions
 
 def translate_file(options: TranslationOptions) -> str:
     """
-    The main orchestrator function for the entire translation process.
-    Handles file I/O, batching, model loading, and progress display.
+    Orchestrates the entire translation process for a single file.
+
+    This function reads a file, deserializes it using the custom_xml_parser,
+    identifies all text nodes needing translation, and then translates them
+    according to the specified options. It supports direct translation, a
+    refinement mode (generating drafts and then refining them), and various
+    other configurations like line-by-line processing and glossaries.
+
+    Args:
+        options: A TranslationOptions object containing all settings for the
+                 translation job, such as input/output paths, model names,
+                 API details, and processing flags.
+
+    Returns:
+        A string containing the full content of the file with all targeted
+        text nodes translated, serialized back into the custom format.
+        Returns an empty string if the output file already exists and
+        overwrite is not enabled.
     """
     # --- File I/O and Setup ---
     if options.output_path and os.path.exists(options.output_path) and not options.overwrite:
@@ -359,6 +519,8 @@ def translate_file(options: TranslationOptions) -> str:
                             original_text=line,
                             draft_model=options.draft_model,
                             refine_model=options.model_name,
+                            draft_model_config=options.draft_model_config,
+                            refine_model_config=options.model_config,
                             num_drafts=options.num_drafts,
                             api_base_url=options.api_base_url,
                             glossary_text=options.glossary_text,
@@ -373,6 +535,7 @@ def translate_file(options: TranslationOptions) -> str:
                             text=line,
                             model_name=options.model_name,
                             api_base_url=options.api_base_url,
+                            model_config=options.model_config,
                             glossary_text=options.glossary_text,
                             debug=options.debug,
                             use_reasoning=(options.reasoning_for in ['main', 'all']),
@@ -386,8 +549,10 @@ def translate_file(options: TranslationOptions) -> str:
                         original_text=original_text,
                         draft_model=options.draft_model,
                         refine_model=options.model_name,
+                        draft_model_config=options.draft_model_config,
+                        refine_model_config=options.model_config,
                         num_drafts=options.num_drafts,
-                        api_base_url=options.api_base_url,
+                        api_base_url=options..api_base_url,
                         glossary_text=options.glossary_text,
                         glossary_for=options.glossary_for,
                         reasoning_for=options.reasoning_for,
@@ -399,6 +564,7 @@ def translate_file(options: TranslationOptions) -> str:
                         text=original_text,
                         model_name=options.model_name,
                         api_base_url=options.api_base_url,
+                        model_config=options.model_config,
                         glossary_text=options.glossary_text,
                         debug=options.debug,
                         use_reasoning=(options.reasoning_for in ['main', 'all'])

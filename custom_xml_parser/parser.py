@@ -1,9 +1,50 @@
+"""
+Provides functions to serialize and deserialize a custom XML-like data format.
+
+This parser handles a hierarchical data structure with two types of tags:
+- Action Groups: `[GroupName]` ... `[/GroupName]` (top-level)
+- Standard Tags: `<TagName>` ... `</TagName>` (nested)
+
+A key feature of this parser is its handling of comments. Comments (`#...`) are
+not discarded but are preserved and associated with the tags they precede or
+accompany. They are stored in a special `"#comments"` key within a tag's dictionary.
+
+The deserialized format is a nested dictionary where tags are keys and their
+content (text and other tags) are values. Text content is stored under a
+special `"#text"` key.
+"""
 import re
 from typing import Any, Dict, List, Tuple
 
 def deserialize(text: str) -> Dict[str, Any]:
     """
     Deserializes a string in the custom XML-like format into a nested dictionary.
+
+    This function parses a string, respecting the hierarchical structure of action
+    groups and standard tags. It preserves comments and associates them with the
+    corresponding tags.
+
+    Args:
+        text: The string containing the data in the custom format.
+
+    Returns:
+        A nested dictionary representing the hierarchical data structure.
+
+    Raises:
+        ValueError: If mismatched or unclosed tags are found.
+
+    Example:
+        >>> data_string = '''
+        ... # This is a comment for MyAction
+        ... [MyAction]
+        ...   <Settings>
+        ...     mode a  # Inline comment
+        ...     <level>5</level>
+        ...   </Settings>
+        ... [/MyAction]
+        ... '''
+        >>> deserialize(data_string)
+        {'MyAction': {'#comments': ['This is a comment for MyAction'], 'Settings': {'#text': 'mode a', 'level': {'#text': '5'}}}}
     """
     lines = text.splitlines()
 
@@ -140,6 +181,36 @@ def merge(d1: Dict[str, Any], d2: Dict[str, Any]) -> Dict[str, Any]:
 def serialize(data: Dict[str, Any]) -> str:
     """
     Serializes a nested dictionary into a string in the custom XML-like format.
+
+    This function reconstructs the custom format from a dictionary, including
+    comments and the proper indentation for hierarchical levels.
+
+    Args:
+        data: A nested dictionary, typically one created by `deserialize`.
+
+    Returns:
+        A string representing the data in the custom format.
+
+    Example:
+        >>> data_dict = {
+        ...     'MyAction': {
+        ...         '#comments': ['Action comment'],
+        ...         'Settings': {
+        ...             '#text': 'mode a',
+        ...             'level': {'#text': '5'}
+        ...         }
+        ...     }
+        ... }
+        >>> print(serialize(data_dict))
+        # Action comment
+        [MyAction]
+		<Settings>
+			mode a
+			<level>
+				5
+			</level>
+		</Settings>
+        [/MyAction]
     """
     result = []
 
