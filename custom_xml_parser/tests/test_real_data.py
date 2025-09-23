@@ -4,7 +4,7 @@ from custom_xml_parser.parser import deserialize
 
 class TestRealData(unittest.TestCase):
 
-    def test_parse_yuyuko_j_data(self):
+    def test_parse_yuyuko_ev_j_data(self):
         """Tests parsing of a real-world data file."""
         data_path = os.path.join(os.path.dirname(__file__), 'data', 'yuyuko_ev_j.txt')
         with open(data_path, 'r', encoding='utf-8') as f:
@@ -25,7 +25,7 @@ class TestRealData(unittest.TestCase):
         self.assertIn('#text', parsed_data['WantFood']['normal']['baby'])
         self.assertIn('ごはんしゃん！', parsed_data['WantFood']['normal']['baby']['#text'])
         
-    def test_parse_yuyuko_ev_data(self):
+    def test_parse_yuyuko_j_data(self):
         """Tests parsing of a real-world data file."""
         data_path = os.path.join(os.path.dirname(__file__), 'data', 'yuyuko_j.txt')
         with open(data_path, 'r', encoding='utf-8') as f:
