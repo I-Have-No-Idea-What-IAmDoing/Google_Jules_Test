@@ -27,8 +27,9 @@
     "endpoint": "completions",
     "params": {
       "temperature": 0.9
-    },
-
+    }
+  },
+  
   "Hunyuan-MT-Chimera-7B.f16.gguf": {
     "inherits": "_default",
 	"refine_prompt_template": "Analyze the following multiple English translations of the Japanese segment surrounded in triple backticks and generate a single refined English translation. Only output the refined translation, do not explain.\n\nThe Japanese segments:\n```{original_text}```\n\nThe multiple English translations:{draft_list}",
