@@ -19,7 +19,8 @@ def is_translation_valid(original_text: str, translated_text: str, debug: bool =
     - Includes the original text within the translation.
     - Contains placeholder text like "[translation here]".
     - Has a character length ratio to the original outside the 0.3-3.5 range.
-    - Introduces new XML/HTML tags not present in the original.
+    - Introduces new URLs not present in the original.
+    - Has a different set of XML/HTML tags than the original.
 
     Args:
         original_text: The source text that was translated.
@@ -77,7 +78,15 @@ def is_translation_valid(original_text: str, translated_text: str, debug: bool =
         return False
 
     # Check for placeholder text
-    if any(re.search(p, cleaned_translation, re.IGNORECASE) for p in [r'\[translation here\]', r'placeholder', r'\[\.\.\.\]']):
+    placeholder_patterns = [
+        r'\[\s*translation here\s*\]',
+        r'\[\s*insert translation\s*\]',
+        r'placeholder',
+        r'\[\s*\.\.\.\s*\]',
+        r'\(translation\)',
+        r'your translation here'
+    ]
+    if any(re.search(p, cleaned_translation, re.IGNORECASE) for p in placeholder_patterns):
         if debug: print(f"--- DEBUG: Validation failed: Translation contains placeholder text.", file=sys.stderr)
         return False
 
@@ -88,9 +97,19 @@ def is_translation_valid(original_text: str, translated_text: str, debug: bool =
             if debug: print(f"--- DEBUG: Validation failed: Translation length ratio ({ratio:.2f}) is outside the 0.3-3.5 range.", file=sys.stderr)
             return False
 
-    # Check for leftover XML/HTML tags that aren't part of the original
-    if re.search(r'<[^>]+>', cleaned_translation) and not re.search(r'<[^>]+>', cleaned_original):
-        if debug: print(f"--- DEBUG: Validation failed: Translation contains new XML/HTML tags.", file=sys.stderr)
+    # Check for new URLs introduced in the translation
+    url_pattern = r'https?://[^\s<>"]+|www\.[^\s<>"]+'
+    original_urls = set(re.findall(url_pattern, cleaned_original))
+    translated_urls = set(re.findall(url_pattern, cleaned_translation))
+    if not translated_urls.issubset(original_urls):
+        if debug: print(f"--- DEBUG: Validation failed: New URL detected in translation. New URLs: {translated_urls - original_urls}", file=sys.stderr)
+        return False
+
+    # Check for mismatched XML/HTML tags
+    original_tags = set(re.findall(r'<[^>]+>', cleaned_original))
+    translated_tags = set(re.findall(r'<[^>]+>', cleaned_translation))
+    if original_tags != translated_tags:
+        if debug: print(f"--- DEBUG: Validation failed: XML/HTML tags mismatch. Original: {original_tags}, Translated: {translated_tags}", file=sys.stderr)
         return False
 
     return True

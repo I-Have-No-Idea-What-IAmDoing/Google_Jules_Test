@@ -417,6 +417,10 @@ class TestTranslationValidation(unittest.TestCase):
 
     def test_validation_fails_for_placeholder_text(self):
         self.assertFalse(validation.is_translation_valid("original", "This is a [translation here]"))
+        self.assertFalse(validation.is_translation_valid("original", "This is a [ insert translation ]"))
+        self.assertFalse(validation.is_translation_valid("original", "This is a (translation)"))
+        self.assertFalse(validation.is_translation_valid("original", "This is a placeholder"))
+        self.assertFalse(validation.is_translation_valid("original", "your translation here"))
 
     def test_validation_fails_for_length_ratio(self):
         long_original = "This is a very long original sentence that we are testing."
@@ -424,9 +428,23 @@ class TestTranslationValidation(unittest.TestCase):
         self.assertFalse(validation.is_translation_valid(long_original, "short")) # Too short
         self.assertFalse(validation.is_translation_valid(short_original, long_original)) # Too long
 
-    def test_validation_fails_for_new_xml_tags(self):
+    def test_validation_for_xml_tags(self):
+        # Fails if new tags are introduced
         self.assertFalse(validation.is_translation_valid("original", "This is a <tag>translation</tag>"))
+        # Fails if tags are removed
+        self.assertFalse(validation.is_translation_valid("<tag>original</tag>", "This is a translation"))
+        # Fails if tags are different
+        self.assertFalse(validation.is_translation_valid("<tag>original</tag>", "This is a <p>translation</p>"))
+        # Succeeds if tags are the same
         self.assertTrue(validation.is_translation_valid("<tag>original</tag>", "This is a <tag>translation</tag>"))
+
+    def test_validation_for_urls(self):
+        # Fails if a new URL is introduced
+        self.assertFalse(validation.is_translation_valid("original", "This is a translation with a link: http://example.com"))
+        # Succeeds if the URL is the same
+        self.assertTrue(validation.is_translation_valid("original url is http://example.com", "translated url is http://example.com"))
+        # Succeeds if there are no URLs
+        self.assertTrue(validation.is_translation_valid("original", "translation"))
 
 class TestDataProcessing(unittest.TestCase):
     def test_collect_text_nodes(self):
