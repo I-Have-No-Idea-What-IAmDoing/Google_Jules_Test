@@ -594,6 +594,30 @@ class TestDataProcessing(unittest.TestCase):
             texts = {n["#text"] for n in nodes}
             self.assertEqual(texts, {"こんにちは", "さようなら", "誰？"})
 
+    def test_collect_text_nodes_skips_unwanted_nodes(self):
+        """Test that nodes that are empty, placeholders, or already in English are skipped."""
+        data = {
+            "translatable": {"#text": "お願いします"},
+            "empty": {"#text": ""},
+            "whitespace": {"#text": "  \t  \n"},
+            "placeholder1": {"#text": "%dummy%"},
+            "placeholder2": {"#text": "%%dummy%%"},
+            "placeholder3": {"#text": "%dummy"},
+            "english": {"#text": "This is in English."},
+            "processed": {"#text": "jp_text:::processed text"}
+        }
+
+        with patch('text_translator.translator_lib.data_processor.detect') as mock_detect:
+            # Set up the mock to identify 'お願いします' as Japanese and the rest as English
+            mock_detect.side_effect = lambda t: 'ja' if t == "お願いします" else 'en'
+
+            nodes = []
+            data_processor.collect_text_nodes(data, nodes)
+
+            # Assert that only the translatable node was collected
+            self.assertEqual(len(nodes), 1)
+            self.assertEqual(nodes[0]['#text'], "お願いします")
+
     def test_cleanup_markers(self):
         """Test cleaning up processing markers."""
         data = {

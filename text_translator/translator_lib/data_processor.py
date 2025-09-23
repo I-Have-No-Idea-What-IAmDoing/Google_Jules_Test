@@ -27,6 +27,8 @@ def collect_text_nodes(data: Union[Dict[str, Any], List[Any]], nodes_list: List[
     and lists) produced by the `custom_xml_parser`. It identifies nodes that
     are candidates for translation based on a set of criteria:
     - The node's key must be `'#text'`.
+    - The text value must not be empty or just whitespace.
+    - The text must not be a placeholder variable (e.g., '%dummy%').
     - The value must be a non-English string (as determined by `langdetect`).
     - The value must not start with the `jp_text:::` marker, which indicates
       it has already been processed.
@@ -39,13 +41,31 @@ def collect_text_nodes(data: Union[Dict[str, Any], List[Any]], nodes_list: List[
         nodes_list: A list that will be populated with the dictionaries
                     containing text nodes that need to be translated.
     """
+    # Regex to detect if a string is just a placeholder variable
+    # It matches strings like '%dummy%', '%%dummy%%', '%dummy', '%%dummy'
+    placeholder_pattern = re.compile(r'^%+\w+%*$')
+
     if isinstance(data, dict):
         for key, value in data.items():
             if key == "#text" and isinstance(value, str):
+                # 1. Skip if empty or just whitespace
+                if not value.strip():
+                    continue
+
+                # 2. Skip if it's a placeholder
+                if placeholder_pattern.match(value):
+                    continue
+
+                # 3. Skip if it's already marked as processed
+                if value.startswith("jp_text:::"):
+                    continue
+
+                # 4. Check for language
                 try:
-                    if not value.startswith("jp_text:::") and detect(value) != 'en':
+                    if detect(value) != 'en':
                         nodes_list.append(data)
                 except LangDetectException:
+                    # If language detection fails, assume it needs translation
                     nodes_list.append(data)
             else:
                 collect_text_nodes(value, nodes_list)
