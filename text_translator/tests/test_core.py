@@ -386,6 +386,13 @@ class TestTranslationValidation(unittest.TestCase):
         with patch('text_translator.translator_lib.validation.detect', return_value='en'):
             self.assertTrue(validation.is_translation_valid("こんにちは", "Hello"))
 
+    def test_validation_strips_thinking_tags(self):
+        """Test that validation logic strips <thinking> tags before evaluation."""
+        original = "こんにちは"
+        translated_with_thinking = "<thinking>The user wants to say hello.</thinking>Hello"
+        with patch('text_translator.translator_lib.validation.detect', return_value='en'):
+            self.assertTrue(validation.is_translation_valid(original, translated_with_thinking))
+
     def test_validation_fails_if_empty_or_identical(self):
         self.assertFalse(validation.is_translation_valid("original", ""))
         self.assertFalse(validation.is_translation_valid("original", "  "))
@@ -447,6 +454,26 @@ class TestTranslationValidation(unittest.TestCase):
         self.assertTrue(validation.is_translation_valid("original", "translation"))
 
 class TestDataProcessing(unittest.TestCase):
+    def test_strip_thinking_tags_various_formats(self):
+        """Test that strip_thinking_tags removes all supported tag formats."""
+        self.assertEqual(data_processor.strip_thinking_tags("<thinking>abc</thinking>def"), "def")
+        self.assertEqual(data_processor.strip_thinking_tags("<think>abc</think>def"), "def")
+        self.assertEqual(data_processor.strip_thinking_tags("[think]abc[/think]def"), "def")
+
+    def test_strip_thinking_tags_case_insensitive(self):
+        """Test that matching is case-insensitive."""
+        self.assertEqual(data_processor.strip_thinking_tags("<Thinking>abc</Thinking>def"), "def")
+        self.assertEqual(data_processor.strip_thinking_tags("<THINK>abc</THINK>def"), "def")
+        self.assertEqual(data_processor.strip_thinking_tags("[THINK]abc[/THINK]def"), "def")
+
+    def test_strip_thinking_tags_no_tags(self):
+        """Test that the function does nothing when no tags are present."""
+        self.assertEqual(data_processor.strip_thinking_tags("abcdef"), "abcdef")
+
+    def test_strip_thinking_tags_multiple_tags(self):
+        """Test that multiple tags are stripped."""
+        self.assertEqual(data_processor.strip_thinking_tags("<thinking>abc</thinking>def<think>ghi</think>"), "def")
+
     def test_collect_text_nodes(self):
         """Test collecting various text nodes."""
         data = {

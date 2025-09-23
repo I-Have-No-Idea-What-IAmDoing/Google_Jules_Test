@@ -1,5 +1,24 @@
+import re
 from typing import Any, Dict, List, Union
 from langdetect import detect, LangDetectException
+
+def strip_thinking_tags(text: str) -> str:
+    """Removes various thinking blocks like <thinking>...</thinking>,
+    <think>...</think>, or [think]...[/think] from a string.
+
+    The matching is case-insensitive.
+
+    Args:
+        text: The input string.
+
+    Returns:
+        The string with all thinking blocks removed.
+    """
+    # Pattern for <thinking>...</thinking> or <think>...</think>
+    text = re.sub(r'<(thinking|think)>.*?</\1>', '', text, flags=re.DOTALL | re.IGNORECASE)
+    # Pattern for [think]...[/think]
+    text = re.sub(r'\[think\].*?\[/think\]', '', text, flags=re.DOTALL | re.IGNORECASE)
+    return text.strip()
 
 def collect_text_nodes(data: Union[Dict[str, Any], List[Any]], nodes_list: List[Dict[str, Any]]) -> None:
     """Recursively finds and collects all text nodes requiring translation.
