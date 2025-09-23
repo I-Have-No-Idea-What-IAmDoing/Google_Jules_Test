@@ -12,25 +12,27 @@ from .translation import get_translation, _get_refined_translation
 from .data_processor import collect_text_nodes, cleanup_markers
 
 def translate_file(options: TranslationOptions) -> str:
-    """
-    Orchestrates the entire translation process for a single file.
+    """Orchestrates the translation process for a single file.
 
-    This function reads a file, deserializes it using the custom_xml_parser,
-    identifies all text nodes needing translation, and then translates them
-    according to the specified options. It supports direct translation, a
-    refinement mode (generating drafts and then refining them), and various
-    other configurations like line-by-line processing and glossaries.
+    This is the main high-level function that ties all parts of the translation
+    process together. It performs the following steps:
+    1.  Reads and deserializes the input file using `custom_xml_parser`.
+    2.  Traverses the data structure to find all text nodes eligible for
+        translation using `collect_text_nodes`.
+    3.  Iterates through each node, calling either `get_translation` (for direct
+        translation) or `_get_refined_translation` (for refinement mode).
+    4.  Handles both full-content and line-by-line translation modes.
+    5.  After translation, cleans up temporary markers and serializes the
+        modified data structure back into a string.
 
     Args:
-        options: A TranslationOptions object containing all settings for the
-                 translation job, such as input/output paths, model names,
-                 API details, and processing flags.
+        options: A `TranslationOptions` object containing all settings for the
+                 translation job, such as paths, models, and modes.
 
     Returns:
-        A string containing the full content of the file with all targeted
-        text nodes translated, serialized back into the custom format.
-        Returns an empty string if the output file already exists and
-        overwrite is not enabled.
+        A string containing the file's full content with text nodes translated,
+        formatted back into the custom XML-like structure. If the output file
+        already exists and `overwrite` is False, it returns an empty string.
     """
     # --- File I/O and Setup ---
     if options.output_path and os.path.exists(options.output_path) and not options.overwrite:

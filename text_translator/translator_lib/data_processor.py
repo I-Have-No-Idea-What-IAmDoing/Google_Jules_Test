@@ -2,17 +2,23 @@ from typing import Any, Dict, List, Union
 from langdetect import detect, LangDetectException
 
 def collect_text_nodes(data: Union[Dict[str, Any], List[Any]], nodes_list: List[Dict[str, Any]]) -> None:
-    """
-    Recursively finds all text nodes in the data structure that need translation.
+    """Recursively finds and collects all text nodes requiring translation.
 
-    A node needs translation if its key is `"#text"`, its value is a string,
-    it is not already marked as processed (with `jp_text:::`), and its language
-    is detected as non-English.
+    This function traverses a nested data structure (composed of dictionaries
+    and lists) produced by the `custom_xml_parser`. It identifies nodes that
+    are candidates for translation based on a set of criteria:
+    - The node's key must be `'#text'`.
+    - The value must be a non-English string (as determined by `langdetect`).
+    - The value must not start with the `jp_text:::` marker, which indicates
+      it has already been processed.
+
+    The function modifies `nodes_list` in place, appending the parent
+    dictionary of each qualifying text node.
 
     Args:
         data: The nested dictionary or list to traverse.
-        nodes_list: A list to which the dictionaries containing text nodes
-                    (i.e., the parent dict of the '#text' key) are appended.
+        nodes_list: A list that will be populated with the dictionaries
+                    containing text nodes that need to be translated.
     """
     if isinstance(data, dict):
         for key, value in data.items():
@@ -29,14 +35,17 @@ def collect_text_nodes(data: Union[Dict[str, Any], List[Any]], nodes_list: List[
             collect_text_nodes(item, nodes_list)
 
 def cleanup_markers(data: Union[Dict[str, Any], List[Any]]) -> None:
-    """
-    Recursively removes the 'jp_text:::' processing marker from all text nodes.
+    """Recursively removes processing markers from all text nodes in the data.
 
-    This is called after translation is complete to clean up the temporary
-    markers used to prevent re-translation.
+    After the translation process, text nodes are temporarily prefixed with
+    `jp_text:::` to mark them as complete. This function traverses the entire
+    nested data structure and removes this prefix from any `'#text'` value
+    where it is found, cleaning the data for final serialization.
+
+    The function modifies the data structure in place.
 
     Args:
-        data: The nested dictionary or list to clean.
+        data: The nested dictionary or list to be cleaned.
     """
     if isinstance(data, dict):
         for key, value in data.items():

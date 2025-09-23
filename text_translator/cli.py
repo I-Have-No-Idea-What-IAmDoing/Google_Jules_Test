@@ -27,13 +27,20 @@ from .translator_lib.api_client import check_server_status, DEFAULT_API_BASE_URL
 __version__ = "1.1.0"
 
 def process_single_file(input_file: str, output_file: Optional[str], options: 'TranslationOptions') -> None:
-    """
-    Manages the translation process for a single file.
+    """Handles the translation process for a single file.
+
+    This function calls the core `translate_file` function and manages the
+    file I/O. It reads the input, gets the translated content, and then
+    either writes the result to the specified output file or prints it to
+    standard output if no output file is given. It also handles creating the
+    necessary output directories.
 
     Args:
-        input_file: The path to the input file.
-        output_file: The path to the output file (or None to print to stdout).
-        options: The TranslationOptions object with all settings.
+        input_file: The full path to the source file to be translated.
+        output_file: The full path to the destination file. If None, the
+                     output will be printed to the console.
+        options: The `TranslationOptions` object containing all settings for
+                 the translation job.
     """
     try:
         if not options.quiet:
@@ -70,12 +77,18 @@ def process_single_file(input_file: str, output_file: Optional[str], options: 'T
         print(f"Error processing file {input_file}: {e}", file=sys.stderr)
 
 def process_directory(args: argparse.Namespace, options: 'TranslationOptions') -> None:
-    """
-    Manages the translation process for an entire directory.
+    """Handles the translation process for an entire directory.
+
+    This function iterates through files in the input directory. For each file,
+    it determines the corresponding output path and then calls
+    `process_single_file` to perform the translation. It supports both flat
+    and recursive traversal of the input directory.
 
     Args:
-        args: The parsed command-line arguments.
-        options: The TranslationOptions object with all settings.
+        args: The `argparse.Namespace` object containing parsed command-line
+              arguments, used here for `input_path`, `output`, and `recursive`.
+        options: The `TranslationOptions` object containing all settings for
+                 the translation job.
     """
     input_dir = args.input_path
     output_dir = args.output or f"{os.path.basename(input_dir)}_translated"
@@ -98,7 +111,20 @@ def process_directory(args: argparse.Namespace, options: 'TranslationOptions') -
                 process_single_file(input_file, output_file, options)
 
 def main() -> None:
-    """Sets up the argument parser and orchestrates the translation process based on user input."""
+    """Entry point for the command-line interface.
+
+    This function is responsible for:
+    - Setting up the `argparse.ArgumentParser` with all possible command-line
+      options, argument groups, and help text.
+    - Parsing the command-line arguments provided by the user.
+    - Performing initial validation of arguments (e.g., checking if paths exist).
+    - Loading model configurations from the specified JSON file.
+    - Assembling the `TranslationOptions` object from all the arguments.
+    - Checking the API server status.
+    - Determining whether the input path is a file or directory and calling
+      the appropriate processing function (`process_single_file` or
+      `process_directory`).
+    """
     parser = argparse.ArgumentParser(
         description="A command-line tool to translate text files from Japanese to English using a local LLM API.",
         formatter_class=argparse.RawTextHelpFormatter,

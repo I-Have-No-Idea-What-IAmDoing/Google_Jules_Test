@@ -4,24 +4,33 @@ from collections import Counter
 from langdetect import detect, LangDetectException
 
 def is_translation_valid(original_text: str, translated_text: str, debug: bool = False, line_by_line: bool = False) -> bool:
-    """
-    Validates a translation using a collection of heuristics.
+    """Validates a translation against a comprehensive set of heuristics.
 
-    This function checks for common failure modes of translation models, such as:
-    - Empty or identical translations.
-    - Refusal phrases (e.g., "I'm sorry, I cannot...").
-    - Non-English text or leftover Japanese characters.
-    - Excessive repetition or inclusion of the original text.
-    - Unreasonable length ratios between original and translated text.
+    This function acts as a quality gate, checking for common failure modes in
+    LLM-generated translations. A translation is considered invalid if it meets
+    any of the following criteria:
+
+    - Is empty or identical to the (case-insensitive) original.
+    - Contains common refusal phrases (e.g., "I'm sorry, I cannot...").
+    - Is not detected as English.
+    - Contains Japanese characters.
+    - Is multi-line when `line_by_line` mode is active.
+    - Exhibits excessive word repetition.
+    - Includes the original text within the translation.
+    - Contains placeholder text like "[translation here]".
+    - Has a character length ratio to the original outside the 0.3-3.5 range.
+    - Introduces new XML/HTML tags not present in the original.
 
     Args:
-        original_text: The source text.
-        translated_text: The translated text to validate.
-        debug: If True, prints the reason for validation failure.
-        line_by_line: If True, enforces a single-line output check.
+        original_text: The source text that was translated.
+        translated_text: The translated text to be validated.
+        debug: If True, prints the specific reason for validation failure to
+               stderr.
+        line_by_line: If True, adds a check to ensure the output is a single
+                      line.
 
     Returns:
-        True if the translation is deemed valid, False otherwise.
+        True if the translation passes all checks, False otherwise.
     """
     cleaned_translation = translated_text.strip()
     cleaned_original = original_text.strip()
