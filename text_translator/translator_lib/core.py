@@ -52,7 +52,13 @@ def translate_file(options: TranslationOptions) -> str:
 
     # --- Pre-load model for direct mode to avoid reloading in loop ---
     if not options.refine_mode:
-        ensure_model_loaded(options.model_name, options.api_base_url, options.verbose, debug=options.debug)
+        ensure_model_loaded(
+            options.model_name,
+            options.api_base_url,
+            model_config=options.model_config,
+            verbose=options.verbose,
+            debug=options.debug
+        )
 
     # --- Main Translation Loop ---
     with tqdm(total=len(nodes_to_translate), desc="Translating", unit="node", disable=options.quiet) as pbar:

@@ -41,9 +41,12 @@
   },
 	"Magistral-Small-2509-UD-Q5_K_XL.gguf": {
 		"inherits": "_default",
+		"llama_server_flags": {
+			"jinja": "",
+			"special": ""
+		},
 		"params": {
 		  "top_p": 0.95
 		}
-
   }
 }
