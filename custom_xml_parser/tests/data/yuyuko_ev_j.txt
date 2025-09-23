@@ -1672,6 +1672,7 @@
 	<normal>
 		<baby>
 			きょびょっ！
+		</baby>	
 		<child>
 			こびょっ！
 		</child>
@@ -1893,6 +1894,7 @@
 	<normal>
 		<baby>
 			きょびょ、、、
+		</baby>
 		<child>
 			こぼ、、、
 		</child>
