@@ -2,13 +2,15 @@ import re
 import sys
 from collections import Counter
 from langdetect import detect, LangDetectException
+from .data_processor import strip_thinking_tags
 
 def is_translation_valid(original_text: str, translated_text: str, debug: bool = False, line_by_line: bool = False) -> bool:
     """Validates a translation against a comprehensive set of heuristics.
 
     This function acts as a quality gate, checking for common failure modes in
-    LLM-generated translations. A translation is considered invalid if it meets
-    any of the following criteria:
+    LLM-generated translations. Before validation, `<thinking>...</thinking>`
+    blocks are automatically stripped from the translated text. A translation
+    is considered invalid if it meets any of the following criteria:
 
     - Is empty or identical to the (case-insensitive) original.
     - Contains common refusal phrases (e.g., "I'm sorry, I cannot...").
@@ -33,6 +35,10 @@ def is_translation_valid(original_text: str, translated_text: str, debug: bool =
     Returns:
         True if the translation passes all checks, False otherwise.
     """
+    # --- Pre-processing ---
+    # Strip thinking tags before any other validation
+    translated_text = strip_thinking_tags(translated_text)
+
     cleaned_translation = translated_text.strip()
     cleaned_original = original_text.strip()
 

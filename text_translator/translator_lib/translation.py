@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional
 
 from .api_client import _api_request, ensure_model_loaded
 from .validation import is_translation_valid
+from .data_processor import strip_thinking_tags
 
 def _extract_translation_from_response(
     response: str,
@@ -56,7 +57,7 @@ def _extract_translation_from_response(
 
     # Fallback to text-based extraction
     # Remove <thinking>...</thinking> blocks
-    cleaned_response = re.sub(r'<thinking>.*?</thinking>', '', response, flags=re.DOTALL).strip()
+    cleaned_response = strip_thinking_tags(response)
 
     # Look for a marker and extract the text after it.
     # The pattern looks for various common markers, case-insensitively.
