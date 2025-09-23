@@ -27,7 +27,7 @@
     "endpoint": "completions",
     "params": {
       "temperature": 0.9
-    }
+    },
 
   "Hunyuan-MT-Chimera-7B.f16.gguf": {
     "inherits": "_default",
