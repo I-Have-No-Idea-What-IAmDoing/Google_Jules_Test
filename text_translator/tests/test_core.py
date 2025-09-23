@@ -180,6 +180,36 @@ class TestCoreWorkflow(unittest.TestCase):
             core.translate_file(options)
             mock_open.assert_not_called()
 
+    def test_empty_translation_does_not_add_marker(self):
+        """
+        Test that if translation returns an empty string, the original text is preserved
+        and the `jp_text:::` marker is NOT added. This test should FAIL before the fix.
+        """
+        with patch('os.path.exists', return_value=False), \
+             patch('builtins.open'), \
+             patch('custom_xml_parser.parser.deserialize') as mock_deserialize, \
+             patch('text_translator.translator_lib.data_processor.detect', return_value='ja'), \
+             patch('text_translator.translator_lib.core.ensure_model_loaded'), \
+             patch('text_translator.translator_lib.core.get_translation') as mock_get_translation, \
+             patch('text_translator.translator_lib.core.cleanup_markers'), \
+             patch('custom_xml_parser.parser.serialize'):
+
+            original_text = "こんにちは"
+            data_structure = {'root': {'#text': original_text}}
+            mock_deserialize.return_value = data_structure
+
+            mock_get_translation.return_value = ""  # Simulate an empty translation
+
+            # Act
+            core.translate_file(self.base_options)
+
+            # Assert: Check the state of the node *before* cleanup_markers would run.
+            # With the bug, the text will be "jp_text:::こんにちは".
+            # The desired state is just "こんにちは". This assertion should fail.
+            final_text_in_node = data_structure['root']['#text']
+            self.assertEqual(final_text_in_node, original_text)
+
+
 class TestGetTranslation(unittest.TestCase):
     def setUp(self):
         self.model_config = {
@@ -443,7 +473,7 @@ class TestApiAndModelHelpers(unittest.TestCase):
                  api_client.ensure_model_loaded("test-model", "http://test.url", verbose=True)
 
             # Check that verbose messages were printed
-            self.assertIn(call("Switching model from 'other-model' to 'test-model'..."), mock_print.call_args_list)
+            self.assertIn(call("Switching model to 'test-model' with new flags..."), mock_print.call_args_list)
             self.assertIn(call("Model loaded successfully."), mock_print.call_args_list)
 
     def test_ensure_model_loaded_connection_error_load(self):
