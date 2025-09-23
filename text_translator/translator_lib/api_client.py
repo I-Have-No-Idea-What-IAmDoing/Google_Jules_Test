@@ -3,7 +3,7 @@ import sys
 import os
 import time
 import json
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 # Default URL for the oobabooga API. This is the standard address when running
 # the server locally with the API enabled. It can be overridden by command-line
@@ -86,18 +86,26 @@ def check_server_status(api_base_url: str, debug: bool = False) -> None:
         )
         sys.exit(1)
 
-def ensure_model_loaded(model_name: str, api_base_url: str, verbose: bool = False, debug: bool = False) -> None:
+def ensure_model_loaded(
+    model_name: str,
+    api_base_url: str,
+    model_config: Optional[Dict[str, Any]] = None,
+    verbose: bool = False,
+    debug: bool = False
+) -> None:
     """Ensures the correct model is loaded on the API server.
 
     This function first queries the server to get the name of the currently
     loaded model. If it does not match the `model_name` parameter, it sends a
-    new request to load the correct model and then pauses briefly to allow the
-    server to complete the operation. This is essential for workflows that use
-    multiple models (e.g., draft and refine).
+    new request to load the correct model. It can also pass additional
+    configuration arguments to the server, such as `llama_server_flags`.
 
     Args:
         model_name: The name of the model that needs to be loaded.
         api_base_url: The base URL of the API server.
+        model_config: A dictionary containing model-specific settings, which
+                      may include `llama_server_flags` to be passed to the
+                      model loader.
         verbose: If True, prints status messages when a model switch occurs.
         debug: If True, passes the debug flag to underlying API requests.
 
@@ -111,12 +119,21 @@ def ensure_model_loaded(model_name: str, api_base_url: str, verbose: bool = Fals
     except (ConnectionError, KeyError) as e:
         raise ConnectionError(f"Error getting current model: {e}")
 
-    if current_model != model_name:
+    # Determine if the model needs to be switched or reloaded with new flags
+    force_reload = model_config and "llama_server_flags" in model_config
+    if current_model != model_name or force_reload:
         if verbose:
-            print(f"Switching model from '{current_model}' to '{model_name}'...")
+            action = "Reloading" if force_reload and current_model == model_name else "Switching"
+            print(f"{action} model to '{model_name}' with new flags...")
+
+        payload = {"model_name": model_name}
+        if force_reload:
+            payload["args"] = model_config["llama_server_flags"]
+
         try:
-            _api_request("internal/model/load", {"model_name": model_name}, api_base_url, timeout=300, debug=debug)
-            if verbose: print("Model loaded successfully.")
+            _api_request("internal/model/load", payload, api_base_url, timeout=300, debug=debug)
+            if verbose:
+                print("Model loaded successfully.")
             time.sleep(5)
         except ConnectionError as e:
             raise ConnectionError(f"Failed to load model '{model_name}': {e}")

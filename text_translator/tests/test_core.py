@@ -42,7 +42,13 @@ class TestCoreWorkflow(unittest.TestCase):
 
             core.translate_file(self.base_options)
 
-            mock_ensure_model.assert_called_once_with("test-model", "http://test.url", False, debug=False)
+            mock_ensure_model.assert_called_once_with(
+                "test-model",
+                "http://test.url",
+                model_config=self.mock_model_config,
+                verbose=False,
+                debug=False
+            )
             mock_get_translation.assert_called_once()
             _, kwargs = mock_get_translation.call_args
             self.assertEqual(kwargs['model_config'], self.mock_model_config)
