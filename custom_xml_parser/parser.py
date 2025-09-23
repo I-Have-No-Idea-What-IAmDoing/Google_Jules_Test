@@ -51,11 +51,6 @@ def deserialize(text: str) -> Dict[str, Any]:
     text_buffer: List[str] = []
     comment_buffer: List[str] = []
 
-    action_start_re = re.compile(r'^\s*\[([a-zA-Z0-9_.-]+)\]\s*$')
-    action_end_re = re.compile(r'^\s*\[/([a-zA-Z0-9_.-]+)\]\s*$')
-    tag_start_re = re.compile(r'^\s*<([a-zA-Z0-9_.-]+)>\s*$')
-    tag_end_re = re.compile(r'^\s*</([a-zA-Z0-9_.-]+)>\s*$')
-
     def flush_text_buffer():
         """Processes and clears the text buffer into the current dictionary.
 
@@ -101,52 +96,87 @@ def deserialize(text: str) -> Dict[str, Any]:
                 text_buffer.append("")
             continue
 
-        # Handle start tags
-        is_action = stripped_line.startswith('[')
-        match = action_start_re.match(stripped_line) or tag_start_re.match(stripped_line)
-        if match:
-            flush_text_buffer()
-            tag_name = match.group(1)
-            new_dict = {}
+        # Optimized tag handling without regex.
+        # The order of checks is crucial. More specific tags must be checked before less specific ones.
+        # A valid tag name itself cannot contain brackets or spaces. This check mimics the original regex.
+        # 1. Closing standard tag: </tag>
+        if stripped_line.startswith('</') and stripped_line.endswith('>'):
+            tag_name = stripped_line[2:-1]
+            if '<' not in tag_name and '>' not in tag_name and ' ' not in tag_name:
+                flush_text_buffer()
+                current_dict = dict_stack[-1]
+                if comment_buffer:
+                    if "#comments" not in current_dict:
+                        current_dict["#comments"] = []
+                    current_dict["#comments"].extend(comment_buffer)
+                    comment_buffer.clear()
 
-            # Associate comments with this new tag
-            all_comments = comment_buffer
-            if comment_part:
-                all_comments.append(comment_part)
-            if all_comments:
-                new_dict["#comments"] = all_comments
-            comment_buffer = [] # Reset buffer
+                if not tag_stack or tag_stack[-1] != ('<', tag_name):
+                    raise ValueError(f"Mismatched closing tag '{stripped_line}' on line {line_num}")
 
-            dict_stack[-1][tag_name] = new_dict
-            dict_stack.append(new_dict)
-            tag_stack.append(('[' if is_action else '<', tag_name))
-            continue
+                tag_stack.pop()
+                dict_stack.pop()
 
-        # Handle end tags
-        is_action_end = stripped_line.startswith('[/')
-        match = action_end_re.match(stripped_line) or tag_end_re.match(stripped_line)
-        if match:
-            flush_text_buffer()
+                if comment_part:
+                    comment_buffer.append(comment_part)
+                continue
+        # 2. Closing action tag: [/Action]
+        elif stripped_line.startswith('[/') and stripped_line.endswith(']'):
+            tag_name = stripped_line[2:-1]
+            if '[' not in tag_name and ']' not in tag_name and ' ' not in tag_name:
+                flush_text_buffer()
+                current_dict = dict_stack[-1]
+                if comment_buffer:
+                    if "#comments" not in current_dict:
+                        current_dict["#comments"] = []
+                    current_dict["#comments"].extend(comment_buffer)
+                    comment_buffer.clear()
 
-            # Before closing the current scope, associate buffered comments with it.
-            current_dict = dict_stack[-1]
-            if comment_buffer:
-                if "#comments" not in current_dict:
-                    current_dict["#comments"] = []
-                current_dict["#comments"].extend(comment_buffer)
-                comment_buffer.clear()
+                if not tag_stack or tag_stack[-1] != ('[', tag_name):
+                    raise ValueError(f"Mismatched closing tag '{stripped_line}' on line {line_num}")
 
-            tag_name = match.group(1)
-            expected_bracket = '[' if is_action_end else '<'
-            if not tag_stack or tag_stack[-1] != (expected_bracket, tag_name):
-                raise ValueError(f"Mismatched closing tag '{stripped_line}' on line {line_num}")
+                tag_stack.pop()
+                dict_stack.pop()
 
-            tag_stack.pop()
-            dict_stack.pop()
+                if comment_part:
+                    comment_buffer.append(comment_part)
+                continue
+        # 3. Opening standard tag: <tag>
+        elif stripped_line.startswith('<') and stripped_line.endswith('>'):
+            tag_name = stripped_line[1:-1]
+            if '<' not in tag_name and '>' not in tag_name and ' ' not in tag_name:
+                flush_text_buffer()
+                new_dict = {}
 
-            if comment_part: # Comment on a closing tag line
-                comment_buffer.append(comment_part)
-            continue
+                all_comments = comment_buffer
+                if comment_part:
+                    all_comments.append(comment_part)
+                if all_comments:
+                    new_dict["#comments"] = all_comments
+                comment_buffer = []
+
+                dict_stack[-1][tag_name] = new_dict
+                dict_stack.append(new_dict)
+                tag_stack.append(('<', tag_name))
+                continue
+        # 4. Opening action tag: [Action]
+        elif stripped_line.startswith('[') and stripped_line.endswith(']'):
+            tag_name = stripped_line[1:-1]
+            if '[' not in tag_name and ']' not in tag_name and ' ' not in tag_name:
+                flush_text_buffer()
+                new_dict = {}
+
+                all_comments = comment_buffer
+                if comment_part:
+                    all_comments.append(comment_part)
+                if all_comments:
+                    new_dict["#comments"] = all_comments
+                comment_buffer = []
+
+                dict_stack[-1][tag_name] = new_dict
+                dict_stack.append(new_dict)
+                tag_stack.append(('[', tag_name))
+                continue
 
         text_to_append = stripped_line
         if comment_part:
