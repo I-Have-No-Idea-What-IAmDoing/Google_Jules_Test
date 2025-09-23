@@ -148,6 +148,21 @@ class TestParser(unittest.TestCase):
         self.assertIn("#comments", parsed["Action"])
         self.assertEqual(parsed["Action"]["#comments"], ["This is an inline comment"])
 
+    def test_round_trip_preserves_inline_comment_on_text_line(self):
+        """Tests that inline comments on text lines are preserved in a round trip."""
+        data = """
+[Action]
+    <Setting>
+        mode a  # This is a crucial comment.
+    </Setting>
+[/Action]
+"""
+        deserialized = deserialize(data)
+        serialized = serialize(deserialized)
+
+        # The crucial check: does the serialized output still have the comment?
+        self.assertIn("# This is a crucial comment.", serialized)
+
     def test_empty_and_comments_only(self):
         """Tests deserializing empty strings or strings with only comments."""
         self.assertEqual(deserialize(""), {})
