@@ -556,6 +556,27 @@ class TestTranslationValidation(unittest.TestCase):
         # Succeeds if there are no URLs
         self.assertTrue(validation.is_translation_valid("original", "translation"))
 
+    def test_validation_for_placeholders(self):
+        """Test the validation of placeholders like %dummy and %name."""
+        with patch('text_translator.translator_lib.validation.detect', return_value='en'):
+            # Succeeds if placeholders are identical and text is different
+            self.assertTrue(validation.is_translation_valid("Original with %name and %value", "Translated with %name and %value"))
+            # Fails if a placeholder is missing
+            self.assertFalse(validation.is_translation_valid("Original with %name and %value", "Translated with only %name"))
+            # Fails if a new placeholder is introduced
+            self.assertFalse(validation.is_translation_valid("Original with %name", "Translated with %name and %extra"))
+            # Fails if a placeholder casing is different (case-sensitive check)
+            self.assertFalse(validation.is_translation_valid("Original with %Name", "Translated with %name"))
+            # Succeeds if there are no variables and text is different
+            self.assertTrue(validation.is_translation_valid("Original with no variables", "Translated with no variables"))
+            # Succeeds with multiple identical placeholders and different text
+            self.assertTrue(validation.is_translation_valid("User %id, Action %id", "A different sentence with User %id, Action %id"))
+            # Fails if one of multiple placeholders is different
+            self.assertFalse(validation.is_translation_valid("User %id, Action %id", "A different sentence with User %id, Action %ID"))
+            # Fails if text is identical, even if placeholders match
+            self.assertFalse(validation.is_translation_valid("User %id, Action %id", "User %id, Action %id"))
+
+
 class TestDataProcessing(unittest.TestCase):
     def test_strip_thinking_tags_various_formats(self):
         """Test that strip_thinking_tags removes all supported tag formats."""
