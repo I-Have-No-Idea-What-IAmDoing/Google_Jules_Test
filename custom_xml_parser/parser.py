@@ -17,34 +17,27 @@ import re
 from typing import Any, Dict, List, Tuple
 
 def deserialize(text: str) -> Dict[str, Any]:
-    """
-    Deserializes a string in the custom XML-like format into a nested dictionary.
+    """Deserializes a string in a custom XML-like format into a dictionary.
 
-    This function parses a string, respecting the hierarchical structure of action
-    groups and standard tags. It preserves comments and associates them with the
-    corresponding tags.
+    This function serves as the primary entry point for parsing the custom format.
+    It processes the text line by line, building a nested dictionary that mirrors
+    the hierarchical structure of action groups (`[GroupName]`) and standard tags
+    (`<TagName>`).
+
+    A key feature is the preservation of comments (`# ...`). Comments are
+    associated with the tag they immediately precede and are stored in a special
+    `'#comments'` key. Text content within a tag is stored under the `'#text'` key.
 
     Args:
-        text: The string containing the data in the custom format.
+        text: A string containing the data in the custom hierarchical format.
 
     Returns:
-        A nested dictionary representing the hierarchical data structure.
+        A nested dictionary representing the structured data. For example:
+        `{'Action': {'#comments': ['...'], 'Tag': {'#text': '...'}}}`
 
     Raises:
-        ValueError: If mismatched or unclosed tags are found.
-
-    Example:
-        >>> data_string = '''
-        ... # This is a comment for MyAction
-        ... [MyAction]
-        ...   <Settings>
-        ...     mode a  # Inline comment
-        ...     <level>5</level>
-        ...   </Settings>
-        ... [/MyAction]
-        ... '''
-        >>> deserialize(data_string)
-        {'MyAction': {'#comments': ['This is a comment for MyAction'], 'Settings': {'#text': 'mode a', 'level': {'#text': '5'}}}}
+        ValueError: If the parser encounters mismatched or unclosed tags,
+                    indicating a malformed structure.
     """
     lines = text.splitlines()
 
@@ -60,6 +53,12 @@ def deserialize(text: str) -> Dict[str, Any]:
     tag_end_re = re.compile(r'^\s*</([a-zA-Z0-9_.-]+)>\s*$')
 
     def flush_text_buffer():
+        """Processes and clears the text buffer.
+
+        Joins the lines collected in `text_buffer` and adds them as a '#text'
+        entry to the dictionary currently at the top of the `dict_stack`.
+        If a '#text' entry already exists, the new content is appended.
+        """
         if text_buffer:
             content = "\n".join(text_buffer)
             if content:
@@ -155,18 +154,21 @@ def deserialize(text: str) -> Dict[str, Any]:
 
 
 def merge(d1: Dict[str, Any], d2: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Recursively merges two dictionaries.
+    """Recursively merges two dictionaries with a "left-hand" priority.
 
-    Values from d1 take precedence. If a key exists in both and the values are
-    dictionaries, the dictionaries are merged recursively.
+    This function combines two dictionaries into a new one. The merge strategy is:
+    - If a key exists in `d1` but not `d2`, it is kept.
+    - If a key exists in `d2` but not `d1`, it is added.
+    - If a key exists in both, the value from `d1` is used (it has priority).
+    - If a key exists in both and both values are dictionaries, the function
+      will recursively merge these nested dictionaries.
 
     Args:
-        d1: The primary dictionary (has priority).
-        d2: The secondary dictionary.
+        d1: The primary dictionary, whose values take precedence.
+        d2: The secondary dictionary, whose values are used as fallbacks.
 
     Returns:
-        The merged dictionary.
+        A new dictionary containing the merged key-value pairs.
     """
     merged = d1.copy()
     for key, value in d2.items():
@@ -179,38 +181,20 @@ def merge(d1: Dict[str, Any], d2: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def serialize(data: Dict[str, Any]) -> str:
-    """
-    Serializes a nested dictionary into a string in the custom XML-like format.
+    """Serializes a nested dictionary into a custom XML-like formatted string.
 
-    This function reconstructs the custom format from a dictionary, including
-    comments and the proper indentation for hierarchical levels.
+    This function converts a dictionary (typically one created by `deserialize`)
+    back into its string representation. It handles the nesting of action groups
+    (`[GroupName]`) and standard tags (`<TagName>`), preserves comments, and
+    applies indentation to reflect the hierarchy.
 
     Args:
-        data: A nested dictionary, typically one created by `deserialize`.
+        data: A nested dictionary representing the data structure. It should
+              follow the format used by `deserialize`, using keys like
+              `'#comments'` and `'#text'`.
 
     Returns:
-        A string representing the data in the custom format.
-
-    Example:
-        >>> data_dict = {
-        ...     'MyAction': {
-        ...         '#comments': ['Action comment'],
-        ...         'Settings': {
-        ...             '#text': 'mode a',
-        ...             'level': {'#text': '5'}
-        ...         }
-        ...     }
-        ... }
-        >>> print(serialize(data_dict))
-        # Action comment
-        [MyAction]
-		<Settings>
-			mode a
-			<level>
-				5
-			</level>
-		</Settings>
-        [/MyAction]
+        A string containing the data serialized into the custom format.
     """
     result = []
 

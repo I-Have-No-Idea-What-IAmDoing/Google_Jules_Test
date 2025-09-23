@@ -12,27 +12,29 @@ def _extract_translation_from_response(
     debug: bool = False,
     use_json_format: bool = False
 ) -> str:
-    """
-    Extracts the final translation from a model's response, supporting multiple formats.
+    """Extracts a translation from a model's potentially complex response.
 
-    This function processes the raw text output from a language model. It attempts
-    extraction in the following order:
-    1.  If `use_json_format` is True, it tries to parse the response as JSON.
-        It looks for a 'translation' key in the JSON object. It also handles
-        cases where the JSON is wrapped in markdown code blocks.
-    2.  It removes any 'thinking' blocks (e.g., <thinking>...</thinking>).
-    3.  It looks for common markers (e.g., "Translation:", "Translated Text:")
-        and extracts the text following them.
-    4.  If no specific format is found, it returns the cleaned response as is.
+    Models may return not just the translation but also explanatory text,
+    reasoning, or markdown formatting. This function isolates the core
+    translation using a series of prioritized strategies:
+
+    1.  **JSON Parsing**: If `use_json_format` is True, it first tries to parse
+        the response as JSON (handling markdown wrappers) and extract the value
+        from a 'translation' key.
+    2.  **Block Removal**: It strips out reasoning blocks like `<thinking>...</thinking>`.
+    3.  **Marker-based Extraction**: It looks for common headers like "Translation:"
+        and returns the text that follows.
+    4.  **Fallback**: If none of the above succeed, it returns the entire
+        cleaned response string.
 
     Args:
-        response: The raw response text from the model.
-        debug: If True, prints debugging information.
-        use_json_format: If True, the function will first attempt to parse the
-                         response as JSON.
+        response: The raw string response from the language model.
+        debug: If True, enables printing of debug information to stderr.
+        use_json_format: If True, specifies that the primary extraction method
+                         should be JSON parsing.
 
     Returns:
-        The extracted and cleaned translation.
+        The extracted translation string, or an empty string if extraction fails.
     """
     if use_json_format:
         try:
@@ -83,28 +85,35 @@ def get_translation(
     use_reasoning: bool = False,
     line_by_line: bool = False
 ) -> str:
-    """
-    Performs a single translation request with validation and retries.
+    """Performs a translation request with validation and retries.
 
-    This function constructs the appropriate prompt using templates from the
-    model configuration, sends it to the API, validates the response, and
-    retries if validation fails.
+    This is the core function for direct (non-refined) translation. It:
+    1.  Constructs a prompt using templates from the model's configuration.
+    2.  Optionally adds a glossary and reasoning instructions.
+    3.  Sends the request to the specified API endpoint.
+    4.  Extracts the translation from the response.
+    5.  Validates the translation using `is_translation_valid`.
+    6.  Retries up to two times if the API call or validation fails.
 
     Args:
-        text: The text to translate.
-        model_name: The name of the model to use.
-        api_base_url: The base URL of the translation API.
+        text: The source text to translate.
+        model_name: The name of the model to use for the translation.
+        api_base_url: The base URL of the API server.
         model_config: The configuration dictionary for the specified model.
-        glossary_text: Optional glossary to provide context.
-        debug: If True, prints detailed debug information.
-        use_reasoning: If True, instructs the model to provide its reasoning.
-        line_by_line: If True, signals that the text is a single line.
+        glossary_text: Optional string containing glossary terms for context.
+        debug: If True, enables extensive debug logging.
+        use_reasoning: If True, uses a prompt template that asks the model to
+                       provide its reasoning before the translation.
+        line_by_line: If True, signals to the validation function that the
+                      translation should be a single line.
 
     Returns:
-        The validated translated text.
+        The validated translated text as a string.
 
     Raises:
-        ValueError: If a valid translation cannot be obtained after 3 attempts.
+        ConnectionError: If the API request fails after all retry attempts.
+        ValueError: If a valid translation cannot be obtained after all
+                    retry attempts.
     """
     if use_reasoning:
         template = model_config.get("reasoning_prompt_template", "{text}")
@@ -173,33 +182,40 @@ def _get_refined_translation(
     debug: bool,
     line_by_line: bool = False
 ) -> str:
-    """
-    Implements the refinement process for translating a single piece of text.
+    """Orchestrates the two-step "refinement" translation process.
 
-    This process involves two main steps:
-    1.  **Drafting**: Generates a specified number of initial translations using
-        a 'draft' model.
-    2.  **Refining**: Feeds the draft translations to a 'refine' model, which
-        produces a final, higher-quality translation based on the drafts.
+    This high-level function manages a sophisticated translation workflow:
+    1.  **Load Draft Model**: Ensures the specified `draft_model` is loaded on
+        the server.
+    2.  **Generate Drafts**: Calls `get_translation` multiple times to create a
+        set of initial, diverse translations of the `original_text`.
+    3.  **Load Refine Model**: Ensures the `refine_model` is loaded.
+    4.  **Refine**: Constructs a new prompt containing the original text and all
+        the generated drafts, then calls the `refine_model` to produce a final,
+        synthesized translation. This step also includes validation and retries.
 
     Args:
-        original_text: The text to translate.
-        draft_model: The name of the model to use for generating drafts.
-        refine_model: The name of the model to use for refining the drafts.
-        draft_model_config: The configuration for the draft model.
-        refine_model_config: The configuration for the refine model.
+        original_text: The source text to translate.
+        draft_model: Name of the model for generating initial drafts.
+        refine_model: Name of the model for synthesizing the final translation.
+        draft_model_config: Configuration for the draft model.
+        refine_model_config: Configuration for the refine model.
         num_drafts: The number of drafts to generate.
-        api_base_url: The base URL of the translation API.
+        api_base_url: The base URL of the API server.
         glossary_text: Optional glossary to provide context.
-        glossary_for: Specifies whether to use the glossary for 'draft', 'refine', or 'all'.
-        reasoning_for: Specifies whether to request reasoning from the 'draft', 'refine', or 'all' models.
-        verbose: If True, prints model loading messages.
-        debug: If True, prints detailed debug information.
-        line_by_line: If True, indicates that the text is a single line.
+        glossary_for: When to apply the glossary ('draft', 'refine', or 'all').
+        reasoning_for: When to request reasoning ('draft', 'refine', or 'all').
+        verbose: If True, prints status messages like model switching.
+        debug: If True, enables extensive debug logging.
+        line_by_line: If True, signals that the text is a single line.
 
     Returns:
-        The refined translation as a string.
-    """
+        The final, refined translation as a string.
+
+    Raises:
+        ValueError: If a valid refined translation cannot be obtained after
+                    all retry attempts.
+"""
     use_draft_reasoning = reasoning_for in ['draft', 'all']
     use_refine_reasoning = reasoning_for in ['refine', 'all']
 

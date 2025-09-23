@@ -5,11 +5,25 @@ import sys
 from .parser import deserialize, serialize, merge
 
 def process_directories(input_dir, output_dir, no_overwrite=False, quiet=False, dry_run=False):
+    """Walks through an input directory and processes `.txt` files.
+
+    This function recursively scans the `input_dir`. For each `.txt` file found,
+    it either copies it to the corresponding location in `output_dir` or, if a
+    file already exists at the destination, merges the two using the `parser`
+    module's `merge` and `serialize` functions.
+
+    Args:
+        input_dir (str): The path to the source directory.
+        output_dir (str): The path to the destination directory.
+        no_overwrite (bool, optional): If True, existing files in the output
+            directory will not be merged or overwritten. Defaults to False.
+        quiet (bool, optional): If True, suppresses all informational messages.
+            Defaults to False.
+        dry_run (bool, optional): If True, simulates the process without
+            writing any files. Defaults to False.
     """
-    Processes the directories, merging or copying .txt files.
-    """
-    # Helper for conditional printing
     def log(message):
+        """Prints a message to the console unless in quiet mode."""
         if not quiet:
             print(message)
 
@@ -56,6 +70,14 @@ def process_directories(input_dir, output_dir, no_overwrite=False, quiet=False, 
                         shutil.copy2(input_path, output_path)
 
 def main():
+    """Defines the command-line interface and executes the main logic.
+
+    Sets up `argparse` to handle command-line arguments for specifying the
+    input and output directories, along with options for controlling the
+    behavior of the script (e.g., `--no-overwrite`, `--quiet`, `--dry-run`).
+    It then validates the input directory and calls `process_directories`
+    to perform the core task.
+    """
     parser = argparse.ArgumentParser(description="Recursively copy and merge custom text files.")
     parser.add_argument("input_dir", help="The input directory.")
     parser.add_argument("output_dir", help="The output directory.")
