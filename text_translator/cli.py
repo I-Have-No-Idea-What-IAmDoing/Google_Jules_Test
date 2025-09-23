@@ -176,7 +176,7 @@ def main() -> None:
     glossary_group = config_group.add_mutually_exclusive_group()
     glossary_group.add_argument("--glossary-file", help="Path to a text file containing a glossary for context.")
     glossary_group.add_argument("--glossary-text", help="A string containing glossary terms.")
-    config_group.add_argument("--glossary-for", choices=['draft', 'refine', 'all'], default='all', help="Apply glossary to: 'draft' model, 'refine' model, or 'all' (default).")
+    config_group.add_argument("--glossary-for", choices=['draft', 'refine', 'all'], default=None, help="Apply glossary to: 'draft' model, 'refine' model, or 'all'.")
     config_group.add_argument("--reasoning-for", choices=['draft', 'refine', 'main', 'all'], default=None, help="Enable step-by-step reasoning for specific model types.")
     config_group.add_argument("--line-by-line", action="store_true", help="Process files line by line instead of translating the whole content at once.")
 
@@ -196,6 +196,8 @@ def main() -> None:
         parser.error("--draft-model is required when using --refine.")
     if args.glossary_file and not os.path.exists(args.glossary_file):
         parser.error(f"Glossary file not found: {args.glossary_file}")
+    if args.glossary_for and not (args.glossary_file or args.glossary_text):
+        parser.error("--glossary-for requires a glossary to be provided via --glossary-file or --glossary-text.")
 
     # --- Load Model Configurations ---
     try:

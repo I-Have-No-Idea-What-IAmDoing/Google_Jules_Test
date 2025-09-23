@@ -93,6 +93,19 @@ class TestCommandLineInterface(unittest.TestCase):
             cli.main()
         self.assertIn("Input path does not exist", mock_stderr.getvalue())
 
+    @patch('text_translator.cli.model_loader')
+    @patch('text_translator.cli.check_server_status')
+    @patch('sys.stderr', new_callable=StringIO)
+    def test_cli_glossary_validation_error(self, mock_stderr, mock_check_server_status, mock_model_loader):
+        """Test that the CLI exits if --glossary-for is used without a glossary."""
+        mock_model_loader.load_model_configs.return_value = {"m": {}}
+        mock_model_loader.get_model_config.return_value = {}
+
+        test_args = ["cli.py", self.input_file, "--model", "m", "--glossary-for", "all"]
+        with patch.object(sys, 'argv', test_args), self.assertRaises(SystemExit):
+            cli.main()
+        self.assertIn("--glossary-for requires a glossary", mock_stderr.getvalue())
+
     @patch('text_translator.cli.translate_file', side_effect=Exception("Core error"))
     @patch('sys.stderr', new_callable=StringIO)
     def test_process_single_file_error_handling(self, mock_stderr, mock_translate_file):
