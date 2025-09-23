@@ -20,24 +20,28 @@ def deserialize(text: str) -> Dict[str, Any]:
     """Deserializes a string in a custom XML-like format into a dictionary.
 
     This function serves as the primary entry point for parsing the custom format.
-    It processes the text line by line, building a nested dictionary that mirrors
-    the hierarchical structure of action groups (`[GroupName]`) and standard tags
-    (`<TagName>`).
+    It processes the text line by line, maintaining a stack of open tags and
+    their corresponding dictionaries. It handles the hierarchical structure of
+    action groups (`[GroupName]`) and standard tags (`<TagName>`).
 
     A key feature is the preservation of comments (`# ...`). Comments are
-    associated with the tag they immediately precede and are stored in a special
-    `'#comments'` key. Text content within a tag is stored under the `'#text'` key.
+    buffered and associated with the next tag that is opened. Text content
+    within a tag is stored under the `'#text'` key.
+
+    The parser is stateful and relies on the order of lines. Mismatched or
+    unclosed tags will result in a `ValueError`.
 
     Args:
         text: A string containing the data in the custom hierarchical format.
+              It is expected to be a multi-line string.
 
     Returns:
         A nested dictionary representing the structured data. For example:
         `{'Action': {'#comments': ['...'], 'Tag': {'#text': '...'}}}`
 
     Raises:
-        ValueError: If the parser encounters mismatched or unclosed tags,
-                    indicating a malformed structure.
+        ValueError: If the parser encounters mismatched closing tags or if there
+                    are unclosed tags at the end of the file.
     """
     lines = text.splitlines()
 
@@ -53,11 +57,18 @@ def deserialize(text: str) -> Dict[str, Any]:
     tag_end_re = re.compile(r'^\s*</([a-zA-Z0-9_.-]+)>\s*$')
 
     def flush_text_buffer():
-        """Processes and clears the text buffer.
+        """Processes and clears the text buffer into the current dictionary.
 
-        Joins the lines collected in `text_buffer` and adds them as a '#text'
-        entry to the dictionary currently at the top of the `dict_stack`.
-        If a '#text' entry already exists, the new content is appended.
+        This inner function is called whenever a new tag is encountered or when
+        the parsing of the file completes. It takes the lines of text collected
+        in the `text_buffer`, joins them with newlines, and assigns the result
+        to the `'#text'` key of the dictionary currently at the top of the
+        `dict_stack`.
+
+        If a `'#text'` key already exists in the current dictionary, the new
+        content is appended to it, separated by a newline. This handles cases
+        of interleaved text and tags. After processing, the `text_buffer` is
+        cleared to prepare for the next block of text.
         """
         if text_buffer:
             content = "\n".join(text_buffer)
@@ -154,18 +165,21 @@ def deserialize(text: str) -> Dict[str, Any]:
 
 
 def merge(d1: Dict[str, Any], d2: Dict[str, Any]) -> Dict[str, Any]:
-    """Recursively merges two dictionaries with a "left-hand" priority.
+    """Recursively merges two dictionaries, giving precedence to the first.
 
-    This function combines two dictionaries into a new one. The merge strategy is:
-    - If a key exists in `d1` but not `d2`, it is kept.
-    - If a key exists in `d2` but not `d1`, it is added.
-    - If a key exists in both, the value from `d1` is used (it has priority).
-    - If a key exists in both and both values are dictionaries, the function
-      will recursively merge these nested dictionaries.
+    This function combines two dictionaries into a new, merged dictionary.
+    The merging logic is as follows:
+    - For keys present in both dictionaries, if both corresponding values are
+      themselves dictionaries, the function will merge them recursively.
+    - Otherwise, the value from the first dictionary (`d1`) is used.
+    - Keys unique to either dictionary are included in the result.
+
+    This is useful for combining a base configuration with a set of overrides.
 
     Args:
-        d1: The primary dictionary, whose values take precedence.
-        d2: The secondary dictionary, whose values are used as fallbacks.
+        d1: The primary dictionary, whose values take precedence in conflicts.
+        d2: The secondary dictionary, whose values are used if the key is not
+            present in `d1`.
 
     Returns:
         A new dictionary containing the merged key-value pairs.
@@ -183,18 +197,24 @@ def merge(d1: Dict[str, Any], d2: Dict[str, Any]) -> Dict[str, Any]:
 def serialize(data: Dict[str, Any]) -> str:
     """Serializes a nested dictionary into a custom XML-like formatted string.
 
-    This function converts a dictionary (typically one created by `deserialize`)
-    back into its string representation. It handles the nesting of action groups
-    (`[GroupName]`) and standard tags (`<TagName>`), preserves comments, and
-    applies indentation to reflect the hierarchy.
+    This function serves as the primary entry point for converting a dictionary
+    (typically one created by `deserialize`) back into its string representation.
+    It iterates through the top-level keys of the dictionary, which are expected
+    to be action groups, and serializes each one.
+
+    It gives special treatment to root-level comments (`'#comments'`) to ensure
+    they appear at the top of the file, preserving file header comments. The
+    actual serialization of nested content is handled by the `_serialize_content`
+    helper function.
 
     Args:
-        data: A nested dictionary representing the data structure. It should
-              follow the format used by `deserialize`, using keys like
-              `'#comments'` and `'#text'`.
+        data: A nested dictionary representing the data structure. It is expected
+              to follow the format produced by `deserialize`, including special
+              keys like `'#comments'` and `'#text'`.
 
     Returns:
-        A string containing the data serialized into the custom format.
+        A string containing the data serialized into the custom hierarchical
+        format, with indentation and comments preserved.
     """
     result = []
 
@@ -227,8 +247,28 @@ def serialize(data: Dict[str, Any]) -> str:
 
 
 def _serialize_content(data: Dict[str, Any], level: int) -> str:
-    """
-    Recursively serializes the content (text and standard tags) within a tag.
+    """Recursively serializes the content (text and tags) within a given dict.
+
+    This helper function is responsible for formatting the content inside a tag,
+    including its text value and any nested tags. It applies indentation based
+    on the current nesting `level`.
+
+    The serialization order is:
+    1. The tag's own text content (`#text`).
+    2. Any nested standard tags (`<TagName>`), each with its own content
+       serialized recursively.
+
+    Args:
+        data: The dictionary representing the content of a tag. This dict may
+              contain a `'#text'` key for its text value and other keys for
+              nested tags.
+        level: The current indentation level, used to create the correct tab
+               spacing for pretty-printing the output.
+
+    Returns:
+        A string containing the serialized and indented content. If the data
+        dict is empty (aside from special keys like `#comments`), it returns
+        an empty string.
     """
     result: List[str] = []
     indent = "\t" * level
