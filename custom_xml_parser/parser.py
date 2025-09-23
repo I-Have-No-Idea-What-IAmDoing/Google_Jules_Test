@@ -148,7 +148,10 @@ def deserialize(text: str) -> Dict[str, Any]:
                 comment_buffer.append(comment_part)
             continue
 
-        text_buffer.append(stripped_line)
+        text_to_append = stripped_line
+        if comment_part:
+            text_to_append += f"  # {comment_part}"
+        text_buffer.append(text_to_append)
 
     flush_text_buffer()
 
