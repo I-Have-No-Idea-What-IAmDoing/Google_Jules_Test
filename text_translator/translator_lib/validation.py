@@ -4,6 +4,8 @@ from collections import Counter
 from langdetect import detect, LangDetectException
 from .data_processor import strip_thinking_tags
 
+import sys
+
 def is_translation_valid(original_text: str, translated_text: str, debug: bool = False, line_by_line: bool = False) -> bool:
     """Validates a translation against a comprehensive set of heuristics.
 
@@ -116,6 +118,14 @@ def is_translation_valid(original_text: str, translated_text: str, debug: bool =
     translated_tags = set(re.findall(r'<[^>]+>', cleaned_translation))
     if original_tags != translated_tags:
         if debug: print(f"--- DEBUG: Validation failed: XML/HTML tags mismatch. Original: {original_tags}, Translated: {translated_tags}", file=sys.stderr)
+        return False
+
+    # Check for mismatched placeholders like %dummy or %name (case-sensitive)
+    placeholder_pattern = r'%\w+'
+    original_placeholders = set(re.findall(placeholder_pattern, cleaned_original))
+    translated_placeholders = set(re.findall(placeholder_pattern, cleaned_translation))
+    if original_placeholders != translated_placeholders:
+        if debug: print(f"--- DEBUG: Validation failed: Placeholder mismatch. Original: {original_placeholders}, Translated: {translated_placeholders}", file=sys.stderr)
         return False
 
     return True
