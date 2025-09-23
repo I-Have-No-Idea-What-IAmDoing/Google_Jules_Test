@@ -3,11 +3,18 @@ import os
 import sys
 from typing import Optional
 
-#- Fix: Allows the script to be run directly for easier development and use,
-#  by ensuring the package's modules can be found.
 if __name__ == "__main__" and not __package__:
-    # If run as a script, add the parent directory to the Python path
-    # to allow relative imports to work.
+    """
+    This block allows the script to be executed directly, which is useful for
+    development and testing. When a Python file is run as the main program,
+    its `__package__` attribute is `None`. This code detects that situation
+    and dynamically modifies the system path.
+
+    By adding the parent directory of the script's location to `sys.path`, it
+    ensures that the relative imports (like `from .translator_lib...`) work
+    correctly, just as they would if the script were imported as part of a
+    larger package. It also sets `__package__` to allow these imports.
+    """
     parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     if parent_dir not in sys.path:
         sys.path.insert(0, parent_dir)
@@ -111,19 +118,26 @@ def process_directory(args: argparse.Namespace, options: 'TranslationOptions') -
                 process_single_file(input_file, output_file, options)
 
 def main() -> None:
-    """Entry point for the command-line interface.
+    """Defines and executes the command-line interface for the translator.
 
-    This function is responsible for:
-    - Setting up the `argparse.ArgumentParser` with all possible command-line
-      options, argument groups, and help text.
-    - Parsing the command-line arguments provided by the user.
-    - Performing initial validation of arguments (e.g., checking if paths exist).
-    - Loading model configurations from the specified JSON file.
-    - Assembling the `TranslationOptions` object from all the arguments.
-    - Checking the API server status.
-    - Determining whether the input path is a file or directory and calling
-      the appropriate processing function (`process_single_file` or
-      `process_directory`).
+    This function serves as the main entry point when the script is executed
+    from the command line. It is responsible for the entire workflow:
+
+    1.  **Argument Parsing**: Sets up `argparse` to define all available
+        command-line arguments, options, and help messages. This includes
+        core settings, directory options, refinement mode, and configuration paths.
+    2.  **Argument Validation**: Performs critical checks on the parsed arguments,
+        such as ensuring the input path exists and that required arguments for
+        certain modes (like `--draft-model` for `--refine`) are provided.
+    3.  **Configuration Loading**: Loads model definitions from the specified
+        `models.json` file.
+    4.  **Options Assembly**: Creates a `TranslationOptions` dataclass instance
+        from the command-line arguments and loaded configurations.
+    5.  **Server Check**: Pings the API server to ensure it is active before
+        proceeding.
+    6.  **Execution Dispatch**: Determines whether the input path is a file or a
+        directory and calls the appropriate handler function (`process_single_file`
+        or `process_directory`) to start the translation job.
     """
     parser = argparse.ArgumentParser(
         description="A command-line tool to translate text files from Japanese to English using a local LLM API.",

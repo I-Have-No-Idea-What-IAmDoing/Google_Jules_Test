@@ -22,8 +22,16 @@ def process_directories(input_dir, output_dir, no_overwrite=False, quiet=False, 
         dry_run (bool, optional): If True, simulates the process without
             writing any files. Defaults to False.
     """
-    def log(message):
-        """Prints a message to the console unless in quiet mode."""
+    def log(message: str):
+        """Prints a message to the console unless in quiet mode.
+
+        This helper function centralizes logging. It respects the `quiet` flag,
+        so that informational messages can be suppressed via command-line
+        arguments.
+
+        Args:
+            message: The string message to be printed.
+        """
         if not quiet:
             print(message)
 

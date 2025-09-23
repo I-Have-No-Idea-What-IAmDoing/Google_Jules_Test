@@ -5,30 +5,37 @@ import time
 import json
 from typing import Any, Dict
 
+# Default URL for the oobabooga API. This is the standard address when running
+# the server locally with the API enabled. It can be overridden by command-line
+# arguments or environment variables.
 DEFAULT_API_BASE_URL: str = "http://127.0.0.1:5000/v1"
 
 def _api_request(endpoint: str, payload: Dict[str, Any], api_base_url: str, timeout: int = 60, is_get: bool = False, debug: bool = False) -> Dict[str, Any]:
-    """Sends a request to the API and handles the response.
+    """Sends a standardized request to the API and handles the response.
 
-    This is a centralized helper function for all communication with the LLM
-    API. It abstracts away the details of `requests`, including setting headers,
-    handling JSON serialization, and raising a standard `ConnectionError` on
-    failure.
+    This private helper function is the central point for all communication with
+    the LLM API. It encapsulates the logic for making HTTP GET or POST requests,
+    setting the correct headers, and handling JSON data. It also provides a
+    consistent error handling mechanism, converting request-related exceptions
+    into a standard `ConnectionError`.
+
+    Optional debug output can be enabled to print the full request payload and
+    the server's response to stderr, which is invaluable for troubleshooting.
 
     Args:
-        endpoint: The API endpoint to target (e.g., "chat/completions").
-        payload: The dictionary to be sent as the JSON body of the request.
+        endpoint: The specific API endpoint to target (e.g., "chat/completions").
+        payload: The dictionary to be serialized into the JSON body of the request.
         api_base_url: The base URL of the API server.
-        timeout: The timeout for the request in seconds.
-        is_get: If True, performs a GET request; otherwise, a POST request.
-        debug: If True, prints the full request payload and response to stderr.
+        timeout: The request timeout in seconds.
+        is_get: If True, a GET request is sent; otherwise, a POST request is sent.
+        debug: If True, the request payload and response are printed to stderr.
 
     Returns:
         The JSON response from the API, parsed into a dictionary.
 
     Raises:
         ConnectionError: If the request fails due to a network issue, a timeout,
-                         or an HTTP error status code from the server.
+                         or if the server returns an HTTP error status code.
     """
     headers = {"Content-Type": "application/json"}
     if debug:

@@ -4,21 +4,29 @@ from typing import Dict, Any, Optional
 import copy
 
 class ModelConfigError(Exception):
-    """Custom exception raised for errors in loading or parsing model configs."""
+    """Custom exception for model configuration loading and parsing errors.
+
+    This exception is raised when the `load_model_configs` function encounters
+    a problem, such as a missing file, invalid JSON, or a broken inheritance
+    chain in the configuration.
+    """
     pass
 
 def _deep_merge(source: Dict[str, Any], destination: Dict[str, Any]) -> Dict[str, Any]:
     """Recursively merges a source dictionary into a destination dictionary.
 
-    This is used to handle config inheritance, where a child config's values
-    overwrite the parent's values. Nested dictionaries are merged recursively.
+    This function is a key part of handling configuration inheritance. It merges
+    the `source` dictionary into the `destination` dictionary. If a key exists
+    in both and both values are dictionaries, it recursively merges them.
+    Otherwise, the value from the `source` overwrites the `destination`'s value.
 
     Args:
-        source: The dictionary with higher priority data.
-        destination: The dictionary to be merged into.
+        source: The dictionary containing new or overriding data. Its values
+                take precedence.
+        destination: The base dictionary that will be modified.
 
     Returns:
-        The `destination` dictionary, modified in place.
+        The `destination` dictionary, modified in place with the merged data.
     """
     for key, value in source.items():
         if isinstance(value, dict) and key in destination and isinstance(destination[key], dict):
@@ -28,23 +36,29 @@ def _deep_merge(source: Dict[str, Any], destination: Dict[str, Any]) -> Dict[str
     return destination
 
 def load_model_configs(config_path: str) -> Dict[str, Any]:
-    """Loads and processes model configurations from a JSON file.
+    """Loads, processes, and resolves inheritance for model configs from a JSON file.
 
-    This function reads a `models.json` file, which can define multiple model
-    configurations. It also handles an `inherits` key, allowing one model config
-    to extend another. It merges the parent's configuration into the child's,
-    with the child's properties taking precedence.
+    This function is responsible for reading a `models.json` file that defines
+    multiple model configurations. It supports an "inherits" mechanism, where a
+    model configuration can specify a parent configuration. When inheritance
+    is used, the parent's configuration is deep-merged into the child's, with
+    the child's specific settings overriding the parent's.
+
+    This allows for creating a base configuration and then defining several
+    variations without repeating common settings.
 
     Args:
-        config_path: The file path to the `models.json` configuration file.
+        config_path: The absolute or relative path to the `models.json` file.
 
     Returns:
-        A dictionary where keys are model names and values are their fully
-        resolved configuration dictionaries.
+        A dictionary where each key is a model name and the value is its fully
+        resolved configuration dictionary (i.e., after inheritance has been
+        applied).
 
     Raises:
-        ModelConfigError: If the file cannot be found, is not valid JSON, or
-                          if an `inherits` key points to a non-existent model.
+        ModelConfigError: If the configuration file cannot be found, contains
+                          invalid JSON, or if a model specifies a non-existent
+                          parent in the `inherits` field.
     """
     if not os.path.exists(config_path):
         raise ModelConfigError(f"Model configuration file not found at: {config_path}")
@@ -88,26 +102,30 @@ def get_model_config(
     all_configs: Dict[str, Any],
     default_config_key: str = "_default"
 ) -> Dict[str, Any]:
-    """Retrieves a specific model's config, with a fallback to the default.
+    """Retrieves a specific model's config, falling back to a default if needed.
 
-    This function safely accesses the dictionary of all configurations. If the
-    requested `model_name` exists, its configuration is returned. If not, it
-    looks for a default configuration specified by `default_config_key`. It also
-    ensures that the returned config dictionary contains a 'params' key.
+    This function safely retrieves a configuration for a given `model_name` from
+    the dictionary of all loaded configurations. If the specified `model_name`
+    is not found, it attempts to return a default configuration identified by
+    `default_config_key`.
+
+    It also ensures that the returned configuration dictionary has a `params`
+    key, adding an empty one if it's missing. This prevents errors in downstream
+    code that expects this key to be present.
 
     Args:
-        model_name: The name of the desired model configuration.
-        all_configs: The dictionary of all available model configurations,
-                     typically loaded by `load_model_configs`.
-        default_config_key: The key used to identify the default configuration
-                            to use as a fallback.
+        model_name: The name of the model whose configuration is requested.
+        all_configs: A dictionary containing all resolved model configurations,
+                     as returned by `load_model_configs`.
+        default_config_key: The key in `all_configs` that corresponds to the
+                            default configuration.
 
     Returns:
-        The final configuration dictionary for the requested model.
+        The configuration dictionary for the requested model.
 
     Raises:
-        ModelConfigError: If the requested `model_name` is not found and no
-                          default configuration is available.
+        ModelConfigError: If the `model_name` is not found in `all_configs` and
+                          no default configuration is available either.
     """
     if model_name in all_configs:
         config = all_configs[model_name]
