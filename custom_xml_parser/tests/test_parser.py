@@ -393,6 +393,34 @@ class TestParser(unittest.TestCase):
         # 4. Assert that the data structure is unchanged
         self.assertEqual(d1, d2)
 
+    def test_interleaved_text_and_tags(self):
+        """Tests that text before and after a nested tag is preserved correctly."""
+        data = """
+<tag>
+    text before
+    <nested>
+        nested text
+    </nested>
+    text after
+</tag>
+"""
+        parsed = deserialize(data)
+        self.assertEqual(parsed['tag']['#text'], 'text before\ntext after')
+        self.assertEqual(parsed['tag']['nested']['#text'], 'nested text')
+
+    def test_trailing_comment_with_blank_line(self):
+        """Tests that a trailing comment followed by a blank line is parsed correctly."""
+        data = "[Action]\n# trailing comment\n\n[/Action]"
+        parsed = deserialize(data)
+        self.assertIn("#comments", parsed["Action"])
+        self.assertEqual(parsed["Action"]["#comments"], ["trailing comment"])
+
+    def test_mismatched_action_tag(self):
+        """Tests that mismatched action tags raise a ValueError."""
+        data = "[Action]\n</Action>"
+        with self.assertRaises(ValueError):
+            deserialize(data)
+
 
 if __name__ == '__main__':
     unittest.main()

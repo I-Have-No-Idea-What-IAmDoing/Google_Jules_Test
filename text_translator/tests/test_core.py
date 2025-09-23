@@ -284,6 +284,24 @@ class TestGetTranslation(unittest.TestCase):
             self.assertIn("prompt", payload)
             self.assertNotIn("messages", payload)
 
+    def test_get_translation_with_debug(self):
+        """Test that get_translation prints debug output."""
+        with patch('text_translator.translator_lib.translation._api_request') as mock_api_request, \
+             patch('text_translator.translator_lib.validation.is_translation_valid', return_value=True), \
+             patch('sys.stderr', new_callable=StringIO) as mock_stderr:
+
+            mock_api_request.return_value = {"choices": [{"message": {"content": "translated"}}]}
+            translation.get_translation("original", "test-model", "http://test.url", self.model_config, debug=True)
+            self.assertIn("Translation Prompt", mock_stderr.getvalue())
+            self.assertIn("Translation Result", mock_stderr.getvalue())
+
+    def test_get_translation_retry_on_connection_error(self):
+        """Test that get_translation retries on ConnectionError."""
+        with patch('text_translator.translator_lib.translation._api_request', side_effect=[ConnectionError, {"choices": [{"message": {"content": "translated"}}]}]), \
+             patch('text_translator.translator_lib.validation.is_translation_valid', return_value=True), \
+             patch('time.sleep'):
+            translation.get_translation("original", "test-model", "http://test.url", self.model_config)
+
 
 class TestTranslationExtraction(unittest.TestCase):
     def test_extract_with_translation_marker(self):
@@ -323,6 +341,20 @@ class TestTranslationExtraction(unittest.TestCase):
         self.assertEqual(result, "")
 
 class TestAdvancedTranslationExtraction(unittest.TestCase):
+    def test_extract_with_debug(self):
+        """Test that debug information is printed."""
+        with patch('sys.stderr', new_callable=StringIO) as mock_stderr:
+            translation._extract_translation_from_response('{"translation": "a"}', debug=True, use_json_format=True)
+            self.assertIn("Extracted translation from JSON", mock_stderr.getvalue())
+
+        with patch('sys.stderr', new_callable=StringIO) as mock_stderr:
+            translation._extract_translation_from_response("Translation: b", debug=True)
+            self.assertIn("Extracting translation from response using marker", mock_stderr.getvalue())
+
+        with patch('sys.stderr', new_callable=StringIO) as mock_stderr:
+            translation._extract_translation_from_response("c", debug=True)
+            self.assertIn("No marker found", mock_stderr.getvalue())
+
     def test_extract_json_format(self):
         """Test extraction with JSON format."""
         response = '{"translation": "This is a JSON translation."}'
@@ -344,8 +376,10 @@ class TestAdvancedTranslationExtraction(unittest.TestCase):
     def test_extract_malformed_json_fallback(self):
         """Test fallback when JSON is malformed."""
         response = '{"translation": "This is a malformed JSON" '
-        result = translation._extract_translation_from_response(response, use_json_format=True)
-        self.assertEqual(result, '{"translation": "This is a malformed JSON"')
+        with patch('sys.stderr', new_callable=StringIO) as mock_stderr:
+            result = translation._extract_translation_from_response(response, use_json_format=True, debug=True)
+            self.assertEqual(result, '{"translation": "This is a malformed JSON"')
+            self.assertIn("JSON parsing failed", mock_stderr.getvalue())
 
     def test_extract_with_alternative_marker(self):
         """Test extraction with 'Translated Text:' marker."""
@@ -384,6 +418,39 @@ class TestApiAndModelHelpers(unittest.TestCase):
     def test_ensure_model_loaded_connection_error_info(self):
         with patch('text_translator.translator_lib.api_client._api_request', side_effect=ConnectionError("Info error")):
             with self.assertRaisesRegex(ConnectionError, "Error getting current model"):
+                api_client.ensure_model_loaded("test-model", "http://test.url")
+
+    def test_api_request_get(self):
+        """Test that _api_request can make a GET request."""
+        with patch('requests.get') as mock_get:
+            mock_get.return_value.json.return_value = {"status": "ok"}
+            api_client._api_request("test/endpoint", {}, "http://test.url", is_get=True)
+            mock_get.assert_called_once()
+
+    def test_check_server_status_connection_error(self):
+        """Test that check_server_status handles ConnectionError and exits."""
+        with patch('text_translator.translator_lib.api_client._api_request', side_effect=ConnectionError("Server down")), \
+             patch('sys.exit') as mock_exit:
+            api_client.check_server_status("http://test.url")
+            mock_exit.assert_called_once_with(1)
+
+    def test_ensure_model_loaded_verbose(self):
+        """Test that ensure_model_loaded prints verbose output."""
+        with patch('text_translator.translator_lib.api_client._api_request') as mock_api_request, \
+             patch('builtins.print') as mock_print:
+            mock_api_request.side_effect = [{"model_name": "other-model"}, {"result": "success"}]
+            with patch('time.sleep'): # Patch sleep to speed up test
+                 api_client.ensure_model_loaded("test-model", "http://test.url", verbose=True)
+
+            # Check that verbose messages were printed
+            self.assertIn(call("Switching model from 'other-model' to 'test-model'..."), mock_print.call_args_list)
+            self.assertIn(call("Model loaded successfully."), mock_print.call_args_list)
+
+    def test_ensure_model_loaded_connection_error_load(self):
+        """Test that ensure_model_loaded handles ConnectionError on model load."""
+        with patch('text_translator.translator_lib.api_client._api_request') as mock_api_request:
+            mock_api_request.side_effect = [{"model_name": "other-model"}, ConnectionError("Load error")]
+            with self.assertRaisesRegex(ConnectionError, "Failed to load model"):
                 api_client.ensure_model_loaded("test-model", "http://test.url")
 
 class TestTranslationValidation(unittest.TestCase):
