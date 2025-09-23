@@ -42,7 +42,7 @@ class TranslationOptions:
     output_path: Optional[str] = None
     api_base_url: str = "http://127.0.0.1:5000/v1"
     glossary_text: Optional[str] = None
-    glossary_for: str = 'all'
+    glossary_for: Optional[str] = None
     refine_mode: bool = False
     draft_model: Optional[str] = None
     num_drafts: int = 6

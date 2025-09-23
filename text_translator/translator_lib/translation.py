@@ -177,7 +177,7 @@ def _get_refined_translation(
     num_drafts: int,
     api_base_url: str,
     glossary_text: Optional[str],
-    glossary_for: str,
+    glossary_for: Optional[str],
     reasoning_for: Optional[str],
     verbose: bool,
     debug: bool,
@@ -220,9 +220,12 @@ def _get_refined_translation(
     use_draft_reasoning = reasoning_for in ['draft', 'all']
     use_refine_reasoning = reasoning_for in ['refine', 'all']
 
+    # If glossary_for is not specified, default to applying it everywhere
+    effective_glossary_for = glossary_for or 'all'
+
     # 1. Generate Drafts
     ensure_model_loaded(draft_model, api_base_url, verbose, debug=debug)
-    draft_glossary = glossary_text if glossary_for in ['draft', 'all'] else None
+    draft_glossary = glossary_text if effective_glossary_for in ['draft', 'all'] else None
     drafts = [
         get_translation(
             original_text,
@@ -247,7 +250,7 @@ def _get_refined_translation(
         template = refine_model_config.get("refine_prompt_template", "Refine: {draft_list}")
         prompt = template.format(original_text=original_text, draft_list=draft_list)
 
-    if glossary_text and glossary_for in ['refine', 'all']:
+    if glossary_text and effective_glossary_for in ['refine', 'all']:
         prompt = f"Please use this glossary for context:\n{glossary_text}\n\n{prompt}"
 
     endpoint = refine_model_config.get("endpoint", "chat/completions")
