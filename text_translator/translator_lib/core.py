@@ -130,7 +130,7 @@ def translate_file(options: TranslationOptions) -> str:
                         use_reasoning=(options.reasoning_for in ['main', 'all'])
                     )
 
-            node['#text'] = f"jp_text:::{translated_text or original_text}"
+            node['#text'] = f"jp_text:::{translated_text}" if translated_text else original_text
             pbar.update(1)
 
     cleanup_markers(data_structure)
