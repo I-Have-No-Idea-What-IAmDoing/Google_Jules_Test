@@ -10,8 +10,10 @@ from text_translator.translator_lib.exceptions import APIConnectionError, ModelL
 from langdetect import LangDetectException
 
 class TestCoreWorkflow(unittest.TestCase):
+    """Tests the high-level translation workflows in the `core` module."""
 
     def setUp(self):
+        """Sets up common mock configurations and options for workflow tests."""
         self.mock_model_config = {
             "prompt_template": "Test prompt: {text}",
             "params": {"temperature": 0.5}
@@ -205,7 +207,9 @@ class TestCoreWorkflow(unittest.TestCase):
 
 
 class TestGetTranslation(unittest.TestCase):
+    """Tests the `get_translation` function's logic and integrations."""
     def setUp(self):
+        """Sets up a standard model configuration for translation tests."""
         self.model_config = {
             "prompt_template": "Translate: {text}",
             "reasoning_prompt_template": "Reason and translate: {text}",
@@ -338,6 +342,7 @@ class TestGetTranslation(unittest.TestCase):
 
 
 class TestTranslationExtraction(unittest.TestCase):
+    """Tests the `_extract_translation_from_response` helper function."""
     def test_extract_with_translation_marker(self):
         """Test extraction when 'Translation:' marker is present."""
         response = "Thinking about it...\nTranslation: This is the final text."
@@ -375,6 +380,7 @@ class TestTranslationExtraction(unittest.TestCase):
         self.assertEqual(result, "")
 
 class TestAdvancedTranslationExtraction(unittest.TestCase):
+    """Tests advanced scenarios for translation extraction, including JSON."""
     def test_extract_with_debug(self):
         """Test that debug information is printed."""
         with patch('sys.stderr', new_callable=StringIO) as mock_stderr:
@@ -435,6 +441,7 @@ class TestAdvancedTranslationExtraction(unittest.TestCase):
 
 
 class TestApiAndModelHelpers(unittest.TestCase):
+    """Tests helper functions in `api_client` related to model management."""
     def test_api_request_debug_printing(self):
         with patch('requests.post') as mock_post, \
              patch('sys.stderr', new_callable=StringIO) as mock_stderr:
@@ -496,8 +503,10 @@ class TestApiAndModelHelpers(unittest.TestCase):
                 api_client.ensure_model_loaded("test-model", "http://test.url")
 
 class TestTranslationValidation(unittest.TestCase):
+    """Tests the `is_translation_valid` function's validation heuristics."""
 
     def test_validation_success(self):
+        """Tests that a simple, valid translation passes."""
         with patch('text_translator.translator_lib.validation.detect', return_value='en'):
             self.assertTrue(validation.is_translation_valid("こんにちは", "Hello"))
 
@@ -590,6 +599,7 @@ class TestTranslationValidation(unittest.TestCase):
 
 
 class TestDataProcessing(unittest.TestCase):
+    """Tests helper functions in the `data_processor` module."""
     def test_strip_thinking_tags_various_formats(self):
         """Test that strip_thinking_tags removes all supported tag formats."""
         self.assertEqual(data_processor.strip_thinking_tags("<thinking>abc</thinking>def"), "def")
