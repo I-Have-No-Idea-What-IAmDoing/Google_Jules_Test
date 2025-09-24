@@ -151,12 +151,19 @@ def ensure_model_loaded(
     except (APIConnectionError, APIStatusError, KeyError) as e:
         raise ModelLoadError(f"Error getting current model: {e}")
 
-    # Determine if the model needs to be switched or reloaded with new flags
-    # Combine params and server flags for the payload.
+    # Determine if the model needs to be switched or reloaded with new flags.
     args_to_pass = {}
     if model_config:
+        # Add standard parameters
         args_to_pass.update(model_config.get("params", {}))
-        args_to_pass.update(model_config.get("extra_flags", {}))
+
+        # Format 'extra_flags' into a comma-separated string
+        extra_flags = model_config.get("extra_flags")
+        if extra_flags and isinstance(extra_flags, dict):
+            # Format the dictionary into "key=value" or just "key"
+            flag_list = [f"{k}={v}" if v else k for k, v in extra_flags.items()]
+            # Join the flags with commas
+            args_to_pass['extra_flags'] = ",".join(flag_list)
 
     # A reload is forced if specific server flags are present.
     # We also reload if the model name is different.
