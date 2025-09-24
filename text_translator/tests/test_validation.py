@@ -12,10 +12,10 @@ class TestTranslationValidation(unittest.TestCase):
         with patch('text_translator.translator_lib.validation.detect', return_value='en'):
             self.assertTrue(validation.is_translation_valid("こんにちは", "Hello"))
 
-    def test_validation_strips_thinking_tags(self):
-        """Test that validation logic strips <thinking> tags before evaluation."""
+    def test_validation_extracts_translation_from_response(self):
+        """Test that validation logic extracts the translation from the response."""
         original = "こんにちは"
-        translated_with_thinking = "<thinking>The user wants to say hello.</thinking>Hello"
+        translated_with_thinking = "Translation: Hello"
         with patch('text_translator.translator_lib.validation.detect', return_value='en'):
             self.assertTrue(validation.is_translation_valid(original, translated_with_thinking))
 

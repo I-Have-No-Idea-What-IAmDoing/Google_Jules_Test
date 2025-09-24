@@ -2,7 +2,7 @@ import re
 import sys
 from collections import Counter
 from langdetect import detect, LangDetectException
-from .data_processor import strip_thinking_tags
+from .data_processor import _extract_translation_from_response, strip_thinking_tags
 
 import sys
 
@@ -39,10 +39,10 @@ def is_translation_valid(original_text: str, translated_text: str, debug: bool =
     """
     # --- Pre-processing ---
     # Strip thinking tags before any other validation
-    translated_text = strip_thinking_tags(translated_text)
+    final_translation = _extract_translation_from_response(translated_text, debug=debug)
     original_text = strip_thinking_tags(original_text)
 
-    cleaned_translation = translated_text.strip()
+    cleaned_translation = final_translation.strip()
     cleaned_original = original_text.strip()
 
     # --- Basic Checks ---
