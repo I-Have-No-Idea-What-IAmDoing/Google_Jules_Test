@@ -1,8 +1,8 @@
 {
   "_default": {
     "endpoint": "chat/completions",
-    "prompt_template": "Translate the following segment into English, without additional explanation or commentary:\n\n{text}",
-    "reasoning_prompt_template": "First, provide a step-by-step reasoning for your translation, including cultural nuances and grammar points. Then, on a new line, provide the final translation, and nothing else, prefixed with 'Translation:'.\n\nOriginal text: {text}",
+    "prompt_template": "Translate the following segment into English, without additional explanation or commentary and making sure to keep all tags the same:\n\n{text}",
+    "reasoning_prompt_template": "First, provide a step-by-step reasoning for your translation, including cultural nuances and grammar points and making sure to keep all tags the same. Then, on a new line, provide the final translation, and nothing else, prefixed with 'Translation:'.\n\nOriginal text: {text}",
     "refine_prompt_template": "Refine these translations of '{original_text}':\n{draft_list}",
     "refine_reasoning_prompt_template": "First, provide a step-by-step reasoning for your translation refinement, explaining your choices. Then, on a new line, provide the final refined translation, and nothing else, prefixed with 'Translation:'.\n\nRefine these translations of '{original_text}':\n{draft_list}",
     "use_json_format": false,
