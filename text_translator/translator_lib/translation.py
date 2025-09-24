@@ -225,7 +225,7 @@ def _get_refined_translation(
     effective_glossary_for = glossary_for or 'all'
 
     # 1. Generate Drafts
-    ensure_model_loaded(draft_model, api_base_url, verbose, debug=debug)
+    ensure_model_loaded(draft_model, api_base_url, model_config=draft_model_config, verbose=verbose, debug=debug)
     draft_glossary = glossary_text if effective_glossary_for in ['draft', 'all'] else None
     drafts = [
         get_translation(
@@ -241,7 +241,7 @@ def _get_refined_translation(
     ]
 
     # 2. Refine Drafts
-    ensure_model_loaded(refine_model, api_base_url, verbose, debug=debug)
+    ensure_model_loaded(refine_model, api_base_url, model_config=refine_model_config, verbose=verbose, debug=debug)
     draft_list = "\n".join(f"{i+1}. ```{d}```" for i, d in enumerate(drafts))
 
     if use_refine_reasoning:
