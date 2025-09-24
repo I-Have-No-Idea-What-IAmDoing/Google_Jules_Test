@@ -1,9 +1,10 @@
 import argparse
 import json
 import os
+import statistics
 import sys
 import timeit
-from typing import Any, Dict, List
+from typing import Any, Callable, Dict, List
 
 from custom_xml_parser.parser import deserialize, serialize
 
@@ -14,6 +15,119 @@ DEFAULT_DATA_FILES = [
     "custom_xml_parser/tests/data/yuyuko_j.txt",
     "custom_xml_parser/tests/data/yuyuko_ev_j.txt",
 ]
+
+class Statistics:
+    """A container for statistical measurements."""
+    def __init__(self, times_s: List[float]):
+        self.mean_s = statistics.mean(times_s)
+        self.median_s = statistics.median(times_s)
+        self.stdev_s = statistics.stdev(times_s) if len(times_s) > 1 else 0.0
+        self.min_s = min(times_s)
+        self.max_s = max(times_s)
+
+    def to_dict(self) -> Dict[str, float]:
+        """Convert statistics to a dictionary, with times in milliseconds."""
+        return {
+            "mean_ms": self.mean_s * 1000,
+            "median_ms": self.median_s * 1000,
+            "stdev_ms": self.stdev_s * 1000,
+            "min_ms": self.min_s * 1000,
+            "max_ms": self.max_s * 1000,
+        }
+
+class BenchmarkResult:
+    """Stores the results of a benchmark for a single file."""
+    def __init__(self, file_path: str, iterations: int, repetitions: int):
+        self.file_path = file_path
+        self.iterations = iterations
+        self.repetitions = repetitions
+        self.deserialize_stats: Statistics = None
+        self.serialize_stats: Statistics = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert the benchmark result to a dictionary."""
+        return {
+            "file": os.path.basename(self.file_path),
+            "iterations": self.iterations,
+            "repetitions": self.repetitions,
+            "deserialization": self.deserialize_stats.to_dict() if self.deserialize_stats else None,
+            "serialization": self.serialize_stats.to_dict() if self.serialize_stats else None,
+        }
+
+class BenchmarkRunner:
+    """Orchestrates the execution of the benchmark suite."""
+    def __init__(self, data_files: List[str], iterations: int, repeat: int):
+        self.data_files = data_files
+        self.iterations = iterations
+        self.repeat = repeat
+        self.results: List[BenchmarkResult] = []
+
+    def _run_benchmark(self, func: Callable[[], Any]) -> Statistics:
+        """Runs a benchmark for a given function and returns statistics."""
+        timer = timeit.Timer(func)
+        times = timer.repeat(repeat=self.repeat, number=self.iterations)
+        # Calculate time per iteration
+        times_per_iteration = [t / self.iterations for t in times]
+        return Statistics(times_per_iteration)
+
+    def run(self):
+        """Executes the full benchmark suite for all data files."""
+        for file_path in self.data_files:
+            result = BenchmarkResult(file_path, self.iterations, self.repeat)
+            raw_content = load_test_data(file_path)
+
+            # 1. Benchmark Deserialization
+            result.deserialize_stats = self._run_benchmark(lambda: deserialize(raw_content))
+
+            # 2. Benchmark Serialization
+            parsed_data = deserialize(raw_content)
+            result.serialize_stats = self._run_benchmark(lambda: serialize(parsed_data))
+
+            self.results.append(result)
+
+    def print_results_human_readable(self):
+        """Prints the benchmark results in a human-readable table."""
+        print("--- Custom XML Parser Benchmark ---")
+        print(f"Iterations per repetition: {self.iterations}")
+        print(f"Repetitions: {self.repeat}")
+
+        for result in self.results:
+            print("\n" + "=" * 80)
+            print(f"Benchmark for: {os.path.basename(result.file_path)}")
+            print("=" * 80)
+
+            stats = result.deserialize_stats.to_dict()
+            print("\nDeserialization Performance:")
+            print(f"  Mean:   {stats['mean_ms']:.4f} ms")
+            print(f"  Median: {stats['median_ms']:.4f} ms")
+            print(f"  Stdev:  {stats['stdev_ms']:.4f} ms")
+            print(f"  Min:    {stats['min_ms']:.4f} ms (Best)")
+            print(f"  Max:    {stats['max_ms']:.4f} ms (Worst)")
+
+            stats = result.serialize_stats.to_dict()
+            print("\nSerialization Performance:")
+            print(f"  Mean:   {stats['mean_ms']:.4f} ms")
+            print(f"  Median: {stats['median_ms']:.4f} ms")
+            print(f"  Stdev:  {stats['stdev_ms']:.4f} ms")
+            print(f"  Min:    {stats['min_ms']:.4f} ms (Best)")
+            print(f"  Max:    {stats['max_ms']:.4f} ms (Worst)")
+            print("-" * 80)
+
+        print("\n--- Benchmark Complete ---")
+
+
+    def print_results_json(self):
+        """Prints the benchmark results in JSON format."""
+        output_data = {
+            "configuration": {
+                "iterations": self.iterations,
+                "repetitions": self.repeat,
+                "data_files": self.data_files
+            },
+            "results": [res.to_dict() for res in self.results]
+        }
+        print(json.dumps(output_data, indent=2))
+
 
 def load_test_data(file_path: str) -> str:
     """Loads content from a specified data file."""
@@ -27,20 +141,6 @@ def load_test_data(file_path: str) -> str:
     except IOError as e:
         print(f"Error reading file '{file_path}': {e}", file=sys.stderr)
         sys.exit(1)
-
-def run_deserialize_benchmark(content: str, iterations: int, repeat: int) -> float:
-    """Runs the benchmark for the deserialize function."""
-    timer = timeit.Timer(lambda: deserialize(content))
-    times = timer.repeat(repeat=repeat, number=iterations)
-    best_time = min(times)
-    return best_time / iterations
-
-def run_serialize_benchmark(data: Dict[str, Any], iterations: int, repeat: int) -> float:
-    """Runs the benchmark for the serialize function."""
-    timer = timeit.Timer(lambda: serialize(data))
-    times = timer.repeat(repeat=repeat, number=iterations)
-    best_time = min(times)
-    return best_time / iterations
 
 def main():
     """
@@ -67,7 +167,7 @@ def main():
         '--repeat',
         type=int,
         default=DEFAULT_REPEAT,
-        help="Number of times to repeat the benchmark. The best result is taken."
+        help="Number of times to repeat the benchmark."
     )
     parser.add_argument(
         '--output-json',
@@ -76,42 +176,17 @@ def main():
     )
     args = parser.parse_args()
 
-    results = []
-
-    for file_path in args.data_files:
-        raw_content = load_test_data(file_path)
-
-        # 1. Benchmark Deserialization
-        avg_deserialize_time = run_deserialize_benchmark(raw_content, args.iterations, args.repeat)
-
-        # Prepare data for serialization benchmark
-        parsed_data = deserialize(raw_content)
-
-        # 2. Benchmark Serialization
-        avg_serialize_time = run_serialize_benchmark(parsed_data, args.iterations, args.repeat)
-
-        results.append({
-            "file": os.path.basename(file_path),
-            "deserialize_time_ms": avg_deserialize_time * 1000,
-            "serialize_time_ms": avg_serialize_time * 1000
-        })
+    runner = BenchmarkRunner(
+        data_files=args.data_files,
+        iterations=args.iterations,
+        repeat=args.repeat
+    )
+    runner.run()
 
     if args.output_json:
-        output_data = {
-            "iterations": args.iterations,
-            "repetitions": args.repeat,
-            "benchmarks": results
-        }
-        print(json.dumps(output_data, indent=2))
+        runner.print_results_json()
     else:
-        print("--- Custom XML Parser Benchmark ---")
-        print(f"Iterations per repetition: {args.iterations}")
-        print(f"Repetitions: {args.repeat} (best time taken)")
-        print(f"\n{'Data File':<40} | {'Best Deserialize Time (ms)':<30} | {'Best Serialize Time (ms)':<30}")
-        print("-" * 105)
-        for res in results:
-            print(f'{res["file"]:<40} | {f"{res['deserialize_time_ms']:.4f} ms":<30} | {f"{res['serialize_time_ms']:.4f} ms":<30}')
-        print("\n--- Benchmark Complete ---")
+        runner.print_results_human_readable()
 
 if __name__ == "__main__":
     main()
