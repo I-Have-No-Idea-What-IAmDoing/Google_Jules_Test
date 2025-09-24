@@ -162,6 +162,33 @@ class TestCoreWorkflow(unittest.TestCase):
             _, kwargs = mock_get_translation.call_args
             self.assertTrue(kwargs.get('use_reasoning'))
 
+    def test_empty_translation_replaces_original_text(self):
+        """
+        Test that if a translation is an empty string, it correctly replaces the original text.
+        This test should FAIL before the fix is applied.
+        """
+        with patch('os.path.exists', return_value=False), \
+             patch('builtins.open'), \
+             patch('custom_xml_parser.parser.deserialize') as mock_deserialize, \
+             patch('text_translator.translator_lib.data_processor.detect', return_value='ja'), \
+             patch('text_translator.translator_lib.core.ensure_model_loaded'), \
+             patch('text_translator.translator_lib.core.get_translation') as mock_get_translation, \
+             patch('custom_xml_parser.parser.serialize') as mock_serialize:
+
+            original_text = "original text"
+            data_structure = {'root': {'#text': original_text}}
+            mock_deserialize.return_value = data_structure
+
+            mock_get_translation.return_value = ""  # Simulate an empty translation
+
+            # Act
+            core.translate_file(self.base_options)
+
+            # Assert: The final node text should be an empty string after cleanup.
+            # The bug causes the original text to be kept.
+            final_data_structure = mock_serialize.call_args[0][0]
+            self.assertEqual(final_data_structure['root']['#text'], "")
+
     def test_translate_file_skips_if_output_exists(self):
         """Test that the function skips if the output file already exists and overwrite is False."""
         with patch('os.path.exists', return_value=True), \
@@ -173,35 +200,6 @@ class TestCoreWorkflow(unittest.TestCase):
 
             core.translate_file(options)
             mock_open.assert_not_called()
-
-    def test_empty_translation_does_not_add_marker(self):
-        """
-        Test that if translation returns an empty string, the original text is preserved
-        and the `jp_text:::` marker is NOT added. This test should FAIL before the fix.
-        """
-        with patch('os.path.exists', return_value=False), \
-             patch('builtins.open'), \
-             patch('custom_xml_parser.parser.deserialize') as mock_deserialize, \
-             patch('text_translator.translator_lib.data_processor.detect', return_value='ja'), \
-             patch('text_translator.translator_lib.core.ensure_model_loaded'), \
-             patch('text_translator.translator_lib.core.get_translation') as mock_get_translation, \
-             patch('text_translator.translator_lib.core.cleanup_markers'), \
-             patch('custom_xml_parser.parser.serialize'):
-
-            original_text = "こんにちは"
-            data_structure = {'root': {'#text': original_text}}
-            mock_deserialize.return_value = data_structure
-
-            mock_get_translation.return_value = ""  # Simulate an empty translation
-
-            # Act
-            core.translate_file(self.base_options)
-
-            # Assert: Check the state of the node *before* cleanup_markers would run.
-            # With the bug, the text will be "jp_text:::こんにちは".
-            # The desired state is just "こんにちは". This assertion should fail.
-            final_text_in_node = data_structure['root']['#text']
-            self.assertEqual(final_text_in_node, original_text)
 
 
 class TestGetTranslation(unittest.TestCase):

@@ -138,9 +138,12 @@ def translate_file(options: TranslationOptions) -> str:
             except TranslatorError as e:
                 pbar.write(f"Warning: Could not translate node {i+1} due to an error: {e}", file=sys.stderr)
                 pbar.write(f"Skipping translation for this node. Original text will be kept.", file=sys.stderr)
-                translated_text = ""
+                # On failure, keep original text and do not add a marker
+                node['#text'] = original_text
+            else:
+                # On success, even if the translation is an empty string, add the marker
+                node['#text'] = f"jp_text:::{translated_text}"
 
-            node['#text'] = f"jp_text:::{translated_text}" if translated_text else original_text
             pbar.update(1)
 
     cleanup_markers(data_structure)
