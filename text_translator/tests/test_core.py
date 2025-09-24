@@ -502,8 +502,6 @@ class TestApiAndModelHelpers(unittest.TestCase):
             with self.assertRaisesRegex(ModelLoadError, "Failed to load model"):
                 api_client.ensure_model_loaded("test-model", "http://test.url")
 
-if __name__ == '__main__':
-    unittest.main()
 
 if __name__ == '__main__':
     unittest.main()
