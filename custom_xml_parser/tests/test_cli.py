@@ -9,8 +9,10 @@ from io import StringIO
 import unittest.mock as mock
 
 class TestCli(unittest.TestCase):
+    """Tests the command-line interface and directory processing logic."""
 
     def setUp(self):
+        """Sets up a temporary directory structure for testing file operations."""
         # Create a temporary directory for tests
         self.test_dir = tempfile.mkdtemp()
         self.input_dir = os.path.join(self.test_dir, 'input')
@@ -19,10 +21,12 @@ class TestCli(unittest.TestCase):
         os.makedirs(self.output_dir)
 
     def tearDown(self):
+        """Removes the temporary directory and its contents after each test."""
         # Remove the directory after the test
         shutil.rmtree(self.test_dir)
 
     def test_copy_and_merge(self):
+        """Tests the core logic of copying new files and merging existing ones."""
         # 1. Setup initial directory structures and files
 
         # --- Input directory setup ---
@@ -53,6 +57,7 @@ class TestCli(unittest.TestCase):
             self.assertNotIn('# Original Output', content)
 
     def test_no_overwrite(self):
+        """Tests that the --no-overwrite flag prevents existing files from being changed."""
         # Setup files
         os.makedirs(os.path.join(self.input_dir, 'subdir'))
         with open(os.path.join(self.input_dir, 'subdir', 'merge_me.txt'), 'w', encoding='utf-8') as f:
@@ -71,6 +76,7 @@ class TestCli(unittest.TestCase):
         self.assertEqual(final_content, original_content)
 
     def test_quiet_flag(self):
+        """Tests that the --quiet flag suppresses all stdout logging."""
         # Redirect stdout to check output
         old_stdout = sys.stdout
         sys.stdout = captured_output = StringIO()
@@ -82,6 +88,7 @@ class TestCli(unittest.TestCase):
         self.assertEqual(captured_output.getvalue(), "")
 
     def test_dry_run_flag(self):
+        """Tests that the --dry-run flag prevents any actual file modifications."""
         # Setup input file
         with open(os.path.join(self.input_dir, 'copy_me.txt'), 'w', encoding='utf-8') as f:
             f.write('[Copy]\n<val>1</val>\n[/Copy]')

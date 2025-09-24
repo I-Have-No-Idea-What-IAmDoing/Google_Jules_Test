@@ -119,8 +119,31 @@ def process_directory(args: argparse.Namespace, options: 'TranslationOptions') -
                 process_single_file(input_file, output_file, options)
 
 def main_logic(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
-    """
-    The core logic of the application after parsing arguments.
+    """Orchestrates the main application workflow after argument parsing.
+
+    This function acts as the central controller for the application. It takes
+    the parsed command-line arguments and performs the following sequence of
+    operations:
+
+    1.  **Argument Validation**: Performs higher-level validation that depends
+        on multiple arguments, such as ensuring `--draft-model` is present
+        when `--refine` is used.
+    2.  **Configuration Loading**: Loads the `models.json` file and retrieves
+        the specific configurations for the requested models.
+    3.  **Glossary Handling**: Reads the glossary file or text if provided.
+    4.  **API Setup**: Determines the correct API URL and performs a health
+        check to ensure the server is responsive.
+    5.  **Options Assembly**: Creates the `TranslationOptions` dataclass,
+        which centralizes all settings for the translation job.
+    6.  **Execution Dispatch**: Determines if the input path is a file or a
+        directory and calls the appropriate processing function
+        (`process_single_file` or `process_directory`).
+
+    Args:
+        args: The `argparse.Namespace` object containing all parsed and validated
+              command-line arguments.
+        parser: The `argparse.ArgumentParser` instance, used here to report
+                errors in a standard way.
     """
     if not os.path.exists(args.input_path):
         parser.error(f"Input path does not exist: {args.input_path}")

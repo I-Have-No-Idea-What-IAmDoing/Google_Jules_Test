@@ -17,8 +17,21 @@ DEFAULT_DATA_FILES = [
 ]
 
 class Statistics:
-    """A container for statistical measurements."""
+    """A container for statistical measurements of benchmark timings.
+
+    Attributes:
+        mean_s: The mean (average) time in seconds.
+        median_s: The median time in seconds.
+        stdev_s: The standard deviation in seconds.
+        min_s: The minimum time in seconds.
+        max_s: The maximum time in seconds.
+    """
     def __init__(self, times_s: List[float]):
+        """Initializes the Statistics object from a list of timings.
+
+        Args:
+            times_s: A list of time measurements in seconds.
+        """
         self.mean_s = statistics.mean(times_s)
         self.median_s = statistics.median(times_s)
         self.stdev_s = statistics.stdev(times_s) if len(times_s) > 1 else 0.0
@@ -26,7 +39,14 @@ class Statistics:
         self.max_s = max(times_s)
 
     def to_dict(self) -> Dict[str, float]:
-        """Convert statistics to a dictionary, with times in milliseconds."""
+        """Converts the statistics to a dictionary.
+
+        The dictionary contains the statistical measures, with all time values
+        converted to milliseconds for easier interpretation.
+
+        Returns:
+            A dictionary mapping statistic names to their values in milliseconds.
+        """
         return {
             "mean_ms": self.mean_s * 1000,
             "median_ms": self.median_s * 1000,
@@ -36,8 +56,26 @@ class Statistics:
         }
 
 class BenchmarkResult:
-    """Stores the results of a benchmark for a single file."""
+    """Stores the results of a benchmark for a single file.
+
+    This class holds the configuration and performance statistics for both
+    serialization and deserialization of a specific data file.
+
+    Attributes:
+        file_path: The path to the data file that was benchmarked.
+        iterations: The number of iterations per benchmark repetition.
+        repetitions: The number of times the benchmark was repeated.
+        deserialize_stats: A `Statistics` object for the deserialization test.
+        serialize_stats: A `Statistics` object for the serialization test.
+    """
     def __init__(self, file_path: str, iterations: int, repetitions: int):
+        """Initializes the BenchmarkResult for a given file and configuration.
+
+        Args:
+            file_path: The path to the data file.
+            iterations: The number of iterations per repetition.
+            repetitions: The number of repetitions for the benchmark.
+        """
         self.file_path = file_path
         self.iterations = iterations
         self.repetitions = repetitions
@@ -45,7 +83,12 @@ class BenchmarkResult:
         self.serialize_stats: Statistics = None
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert the benchmark result to a dictionary."""
+        """Converts the benchmark result to a dictionary for serialization.
+
+        Returns:
+            A dictionary representation of the benchmark result, suitable for
+            JSON output.
+        """
         return {
             "file": os.path.basename(self.file_path),
             "iterations": self.iterations,
@@ -55,15 +98,43 @@ class BenchmarkResult:
         }
 
 class BenchmarkRunner:
-    """Orchestrates the execution of the benchmark suite."""
+    """Orchestrates the execution of the benchmark suite.
+
+    This class manages the process of running benchmarks across multiple data
+    files, collecting the results, and printing them in various formats.
+
+    Attributes:
+        data_files: A list of paths to the data files to be benchmarked.
+        iterations: The number of iterations for each benchmark repetition.
+        repeat: The number of times to repeat each benchmark.
+        results: A list of `BenchmarkResult` objects, populated after `run()`
+                 is called.
+    """
     def __init__(self, data_files: List[str], iterations: int, repeat: int):
+        """Initializes the BenchmarkRunner with the specified configuration.
+
+        Args:
+            data_files: A list of paths to the data files.
+            iterations: The number of iterations per repetition.
+            repeat: The number of times to repeat the benchmark.
+        """
         self.data_files = data_files
         self.iterations = iterations
         self.repeat = repeat
         self.results: List[BenchmarkResult] = []
 
     def _run_benchmark(self, func: Callable[[], Any]) -> Statistics:
-        """Runs a benchmark for a given function and returns statistics."""
+        """Runs a benchmark for a given function and returns statistics.
+
+        This helper method uses the `timeit` module to repeatedly execute a
+        function and captures the timing results.
+
+        Args:
+            func: The function to be benchmarked.
+
+        Returns:
+            A `Statistics` object containing the performance measurements.
+        """
         timer = timeit.Timer(func)
         times = timer.repeat(repeat=self.repeat, number=self.iterations)
         # Calculate time per iteration
@@ -71,7 +142,11 @@ class BenchmarkRunner:
         return Statistics(times_per_iteration)
 
     def run(self):
-        """Executes the full benchmark suite for all data files."""
+        """Executes the full benchmark suite for all specified data files.
+
+        This method iterates through each data file, running both deserialization
+        and serialization benchmarks, and stores the results.
+        """
         for file_path in self.data_files:
             result = BenchmarkResult(file_path, self.iterations, self.repeat)
             raw_content = load_test_data(file_path)

@@ -8,9 +8,23 @@ class ModelConfigError(Exception):
     pass
 
 def _deep_merge(source: Dict[str, Any], destination: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Recursively merges a source dictionary into a destination dictionary.
-    The destination is modified in place.
+    """Recursively merges a source dictionary into a destination dictionary.
+
+    This function is used to combine model configurations, particularly for
+    handling inheritance. It merges the `source` dictionary into the
+    `destination` dictionary. If a key exists in both and both values are
+    dictionaries, it performs a recursive merge. Otherwise, the value from the
+    `source` overwrites the value in the `destination`.
+
+    Note:
+        The `destination` dictionary is modified in place.
+
+    Args:
+        source: The dictionary to merge from. Its values take precedence.
+        destination: The dictionary to merge into. It is modified directly.
+
+    Returns:
+        The modified `destination` dictionary.
     """
     for key, value in source.items():
         if isinstance(value, dict) and key in destination and isinstance(destination[key], dict):
@@ -25,8 +39,33 @@ def _resolve_config(
     resolved_configs: Dict[str, Any],
     resolving_stack: Set[str]
 ) -> Dict[str, Any]:
-    """
-    Recursively resolves a single model's configuration, handling inheritance.
+    """Recursively resolves a single model's configuration, handling inheritance.
+
+    This function is the core of the model configuration inheritance system.
+    It takes a model's name and the dictionary of all configurations, then
+    builds the final, flattened configuration for that model.
+
+    It works by:
+    1.  Checking for circular dependencies to prevent infinite recursion.
+    2.  If the model `inherits` from a parent, it recursively calls itself to
+        resolve the parent's configuration first.
+    3.  It then merges the current model's specific settings into the resolved
+        parent configuration, with the child's settings taking precedence.
+    4.  The final, resolved configuration is cached to avoid redundant work.
+
+    Args:
+        name: The name of the model config to resolve.
+        configs: A dictionary containing all model configurations.
+        resolved_configs: A cache for storing already resolved configs.
+        resolving_stack: A set used to track the current inheritance chain
+                         to detect circular dependencies.
+
+    Returns:
+        A dictionary representing the fully resolved model configuration.
+
+    Raises:
+        ModelConfigError: If a circular dependency is detected or if a model
+                          name is not found.
     """
     # Detect circular dependencies
     if name in resolving_stack:
@@ -64,9 +103,25 @@ def _resolve_config(
     return resolved_config
 
 def load_model_configs(config_path: str) -> Dict[str, Any]:
-    """
-    Loads, processes, and resolves inheritance for model configs from a JSON file.
-    Supports chained and multiple inheritance.
+    """Loads and resolves all model configurations from a JSON file.
+
+    This function serves as the main entry point for loading model settings.
+    It reads a JSON file containing definitions for multiple models, then
+    iterates through each model and uses the `_resolve_config` helper to
+    build its complete configuration, resolving any `inherits` clauses.
+
+    The result is a dictionary where keys are model names and values are their
+    fully resolved configuration objects.
+
+    Args:
+        config_path: The file path to the JSON configuration file.
+
+    Returns:
+        A dictionary containing all resolved model configurations.
+
+    Raises:
+        ModelConfigError: If the config file is not found, cannot be parsed,
+                          or contains circular dependencies.
     """
     if not os.path.exists(config_path):
         raise ModelConfigError(f"Model configuration file not found at: {config_path}")
@@ -89,8 +144,26 @@ def get_model_config(
     all_configs: Dict[str, Any],
     default_config_key: str = "_default"
 ) -> Dict[str, Any]:
-    """
-    Retrieves a specific model's config, falling back to a default if needed.
+    """Retrieves a specific model's config, with fallback to a default.
+
+    This function safely retrieves a configuration from the dictionary of all
+    resolved configs. If the specified `model_name` is not found, it attempts
+    to fall back to a default configuration specified by `default_config_key`.
+    It also ensures that the returned configuration dictionary has a `params`
+    key, even if it's just an empty dictionary, to prevent downstream errors.
+
+    Args:
+        model_name: The name of the desired model configuration.
+        all_configs: The dictionary of all available, resolved model configs.
+        default_config_key: The key for the default configuration to use if
+                            `model_name` is not found.
+
+    Returns:
+        A deep copy of the requested model's configuration dictionary.
+
+    Raises:
+        ModelConfigError: If the requested model is not found and no default
+                          configuration is available.
     """
     if model_name in all_configs:
         config = all_configs[model_name]
