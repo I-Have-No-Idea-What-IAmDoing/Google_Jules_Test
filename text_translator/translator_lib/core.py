@@ -1,4 +1,5 @@
 import os
+import sys
 from typing import Any, Dict, List
 from tqdm import tqdm
 
@@ -10,6 +11,7 @@ from .options import TranslationOptions
 from .api_client import ensure_model_loaded
 from .translation import get_translation, _get_refined_translation
 from .data_processor import collect_text_nodes, cleanup_markers
+from .exceptions import TranslatorError
 
 def translate_file(options: TranslationOptions) -> str:
     """Orchestrates the translation process for a single file.
@@ -62,21 +64,54 @@ def translate_file(options: TranslationOptions) -> str:
 
     # --- Main Translation Loop ---
     with tqdm(total=len(nodes_to_translate), desc="Translating", unit="node", disable=options.quiet) as pbar:
-        for node in nodes_to_translate:
+        for i, node in enumerate(nodes_to_translate):
             original_text = node['#text']
             translated_text = ""
 
-            if options.line_by_line:
-                lines = original_text.splitlines(True) # Keep endings
-                translated_lines = []
-                for line in lines:
-                    if not line.strip():
-                        translated_lines.append(line)
-                        continue
+            try:
+                if options.line_by_line:
+                    lines = original_text.splitlines(True) # Keep endings
+                    translated_lines = []
+                    for line in lines:
+                        if not line.strip():
+                            translated_lines.append(line)
+                            continue
 
+                        if options.refine_mode:
+                            translated_line = _get_refined_translation(
+                                original_text=line,
+                                draft_model=options.draft_model,
+                                refine_model=options.model_name,
+                                draft_model_config=options.draft_model_config,
+                                refine_model_config=options.model_config,
+                                num_drafts=options.num_drafts,
+                                api_base_url=options.api_base_url,
+                                glossary_text=options.glossary_text,
+                                glossary_for=options.glossary_for,
+                                reasoning_for=options.reasoning_for,
+                                verbose=options.verbose,
+                                debug=options.debug,
+                                line_by_line=True
+                            )
+                        else: # Direct mode
+                            # In direct mode, glossary is only used if it's for 'all' or not specified
+                            direct_glossary = options.glossary_text if options.glossary_for in [None, 'all'] else None
+                            translated_line = get_translation(
+                                text=line,
+                                model_name=options.model_name,
+                                api_base_url=options.api_base_url,
+                                model_config=options.model_config,
+                                glossary_text=direct_glossary,
+                                debug=options.debug,
+                                use_reasoning=(options.reasoning_for in ['main', 'all']),
+                                line_by_line=True
+                            )
+                        translated_lines.append(translated_line)
+                    translated_text = "".join(translated_lines)
+                else: # Translate entire node at once
                     if options.refine_mode:
-                        translated_line = _get_refined_translation(
-                            original_text=line,
+                        translated_text = _get_refined_translation(
+                            original_text=original_text,
                             draft_model=options.draft_model,
                             refine_model=options.model_name,
                             draft_model_config=options.draft_model_config,
@@ -87,51 +122,23 @@ def translate_file(options: TranslationOptions) -> str:
                             glossary_for=options.glossary_for,
                             reasoning_for=options.reasoning_for,
                             verbose=options.verbose,
-                            debug=options.debug,
-                            line_by_line=True
+                            debug=options.debug
                         )
                     else: # Direct mode
-                        # In direct mode, glossary is only used if it's for 'all' or not specified
                         direct_glossary = options.glossary_text if options.glossary_for in [None, 'all'] else None
-                        translated_line = get_translation(
-                            text=line,
+                        translated_text = get_translation(
+                            text=original_text,
                             model_name=options.model_name,
                             api_base_url=options.api_base_url,
                             model_config=options.model_config,
                             glossary_text=direct_glossary,
                             debug=options.debug,
-                            use_reasoning=(options.reasoning_for in ['main', 'all']),
-                            line_by_line=True
+                            use_reasoning=(options.reasoning_for in ['main', 'all'])
                         )
-                    translated_lines.append(translated_line)
-                translated_text = "".join(translated_lines)
-            else: # Translate entire node at once
-                if options.refine_mode:
-                    translated_text = _get_refined_translation(
-                        original_text=original_text,
-                        draft_model=options.draft_model,
-                        refine_model=options.model_name,
-                        draft_model_config=options.draft_model_config,
-                        refine_model_config=options.model_config,
-                        num_drafts=options.num_drafts,
-                        api_base_url=options.api_base_url,
-                        glossary_text=options.glossary_text,
-                        glossary_for=options.glossary_for,
-                        reasoning_for=options.reasoning_for,
-                        verbose=options.verbose,
-                        debug=options.debug
-                    )
-                else: # Direct mode
-                    direct_glossary = options.glossary_text if options.glossary_for in [None, 'all'] else None
-                    translated_text = get_translation(
-                        text=original_text,
-                        model_name=options.model_name,
-                        api_base_url=options.api_base_url,
-                        model_config=options.model_config,
-                        glossary_text=direct_glossary,
-                        debug=options.debug,
-                        use_reasoning=(options.reasoning_for in ['main', 'all'])
-                    )
+            except TranslatorError as e:
+                pbar.write(f"Warning: Could not translate node {i+1} due to an error: {e}", file=sys.stderr)
+                pbar.write(f"Skipping translation for this node. Original text will be kept.", file=sys.stderr)
+                translated_text = ""
 
             node['#text'] = f"jp_text:::{translated_text}" if translated_text else original_text
             pbar.update(1)

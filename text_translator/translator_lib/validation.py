@@ -114,8 +114,8 @@ def is_translation_valid(original_text: str, translated_text: str, debug: bool =
         return False
 
     # Check for mismatched XML/HTML tags
-    original_tags = set(re.findall(r'<[^>]+>', cleaned_original))
-    translated_tags = set(re.findall(r'<[^>]+>', cleaned_translation))
+    original_tags = set(re.findall(r'<[^>]+?>', cleaned_original))
+    translated_tags = set(re.findall(r'<[^>]+?>', cleaned_translation))
     if original_tags != translated_tags:
         if debug: print(f"--- DEBUG: Validation failed: XML/HTML tags mismatch. Original: {original_tags}, Translated: {translated_tags}", file=sys.stderr)
         return False
