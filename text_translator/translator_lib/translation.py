@@ -7,6 +7,7 @@ from typing import Any, Dict, Optional
 from .api_client import _api_request, ensure_model_loaded
 from .validation import is_translation_valid
 from .data_processor import strip_thinking_tags
+from .exceptions import TranslationError, APIConnectionError, APIStatusError
 
 def _extract_translation_from_response(
     response: str,
@@ -159,13 +160,13 @@ def get_translation(
             if debug:
                 print(f"--- DEBUG: Translation failed validation. Retrying... (Attempt {attempt + 1}/3)", file=sys.stderr)
 
-        except ConnectionError as e:
+        except (APIConnectionError, APIStatusError) as e:
             if attempt < 2:
-                print(f"--- DEBUG: Connection error. Retrying... (Attempt {attempt + 1}/3)", file=sys.stderr)
+                print(f"--- DEBUG: API error. Retrying... (Attempt {attempt + 1}/3)", file=sys.stderr)
                 time.sleep(2 ** attempt)
             else:
-                raise e
-    raise ValueError(f"Failed to get a valid translation for '{text[:50]}...' after 3 attempts")
+                raise TranslationError(f"API request failed after multiple retries: {e}") from e
+    raise TranslationError(f"Failed to get a valid translation for '{text[:50]}...' after 3 attempts")
 
 
 def _get_refined_translation(
@@ -289,10 +290,10 @@ def _get_refined_translation(
                 continue
 
             return refined_text or original_text
-        except ConnectionError as e:
+        except (APIConnectionError, APIStatusError) as e:
             if attempt < 2:
                 time.sleep(2 ** attempt)
             else:
-                raise e
+                raise TranslationError(f"API request failed during refinement after multiple retries: {e}") from e
 
-    raise ValueError(f"Failed to get a valid refined translation for '{original_text[:50]}...' after 3 attempts")
+    raise TranslationError(f"Failed to get a valid refined translation for '{original_text[:50]}...' after 3 attempts")

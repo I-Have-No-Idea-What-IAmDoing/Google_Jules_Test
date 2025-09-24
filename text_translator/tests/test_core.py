@@ -6,6 +6,7 @@ from io import StringIO
 
 from text_translator.translator_lib import core, translation, api_client, validation, data_processor
 from text_translator.translator_lib.options import TranslationOptions
+from text_translator.translator_lib.exceptions import APIConnectionError, ModelLoadError, TranslatorError
 from langdetect import LangDetectException
 
 class TestCoreWorkflow(unittest.TestCase):
@@ -113,41 +114,34 @@ class TestCoreWorkflow(unittest.TestCase):
             self.assertEqual(final_text, "line one (translated)\nline two (translated)\n")
 
     def test_refinement_fails_with_multiline_in_line_by_line_mode(self):
-        """Test that the fixed implementation raises a ValueError when the refined translation is invalid in line-by-line mode."""
+        """Test that a refined translation failure is handled gracefully and a warning is logged."""
         with patch('os.path.exists', return_value=False), \
              patch('builtins.open'), \
-             patch('custom_xml_parser.parser.deserialize') as mock_deserialize, \
+             patch('custom_xml_parser.parser.deserialize'), \
              patch('text_translator.translator_lib.core.collect_text_nodes') as mock_collect, \
-             patch('text_translator.translator_lib.translation._api_request') as mock_api_request, \
              patch('text_translator.translator_lib.translation.ensure_model_loaded'), \
+             patch('text_translator.translator_lib.translation.get_translation') as mock_get_translation, \
+             patch('text_translator.translator_lib.translation._api_request') as mock_api_request, \
+             patch('sys.stderr', new_callable=StringIO) as mock_stderr, \
              patch('time.sleep'):
 
-            input_text = "single line"
-            data_structure = {'root': {'#text': input_text}}
-            mock_deserialize.return_value = data_structure
             mock_collect.side_effect = lambda data, lst: lst.extend([{'#text': 'single line'}])
+            mock_get_translation.return_value = "A valid draft translation."
+            # The refinement call gets an invalid (multiline) response
+            mock_api_request.return_value = {"choices": [{"message": {"content": "this is the\nrefined translation"}}]}
 
             options = self.base_options
             options.refine_mode = True
             options.draft_model = "draft-model"
-            options.num_drafts = 1
-            options.line_by_line = True
-            # The draft and refine configs don't specify an endpoint, so they use the default (chat)
-            options.draft_model_config = {}
-            options.model_config = {}
+            options.line_by_line = True # Enable line-by-line validation
 
+            # Act
+            core.translate_file(options)
 
-            draft_response = {"choices": [{"message": {"content": "a valid single-line draft"}}]}
-            invalid_refined_response = {"choices": [{"message": {"content": "this is the\nrefined translation"}}]}
-            mock_api_request.side_effect = [
-                draft_response,
-                invalid_refined_response,
-                invalid_refined_response,
-                invalid_refined_response,
-            ]
-
-            with self.assertRaisesRegex(ValueError, "Failed to get a valid refined translation"):
-                core.translate_file(options)
+            # Assert that a warning was printed to stderr
+            output = mock_stderr.getvalue()
+            self.assertIn("Warning: Could not translate node 1", output)
+            self.assertIn("Failed to get a valid refined translation", output)
 
     def test_direct_translation_with_reasoning(self):
         """Test the direct translation workflow with reasoning enabled."""
@@ -269,12 +263,12 @@ class TestGetTranslation(unittest.TestCase):
             self.assertEqual(mock_api_request.call_count, 2)
 
     def test_get_translation_raises_error_on_persistent_invalid(self):
-        """Test that get_translation raises ValueError if the translation is always invalid."""
+        """Test that get_translation raises TranslationError if the translation is always invalid."""
         with patch('text_translator.translator_lib.translation._api_request') as mock_api_request, \
              patch('text_translator.translator_lib.translation.is_translation_valid', return_value=False):
 
             mock_api_request.return_value = {"choices": [{"text": "some invalid response"}]}
-            with self.assertRaisesRegex(ValueError, "Failed to get a valid translation"):
+            with self.assertRaises(TranslatorError):
                 translation.get_translation("original text", "model", "http://test.url", self.model_config)
             self.assertEqual(mock_api_request.call_count, 3)
 
@@ -326,11 +320,21 @@ class TestGetTranslation(unittest.TestCase):
             self.assertIn("Translation Result", mock_stderr.getvalue())
 
     def test_get_translation_retry_on_connection_error(self):
-        """Test that get_translation retries on ConnectionError."""
-        with patch('text_translator.translator_lib.translation._api_request', side_effect=[ConnectionError, {"choices": [{"message": {"content": "translated"}}]}]), \
+        """Test that get_translation retries on APIConnectionError."""
+        with patch('text_translator.translator_lib.translation._api_request', side_effect=[APIConnectionError, {"choices": [{"message": {"content": "translated"}}]}]), \
              patch('text_translator.translator_lib.validation.is_translation_valid', return_value=True), \
              patch('time.sleep'):
-            translation.get_translation("original", "test-model", "http://test.url", self.model_config)
+            # This should succeed because the second attempt works
+            result = translation.get_translation("original", "test-model", "http://test.url", self.model_config)
+            self.assertEqual(result, "translated")
+
+    def test_get_translation_raises_translator_error_on_persistent_connection_error(self):
+        """Test that get_translation raises TranslatorError after retries on ConnectionError."""
+        with patch('text_translator.translator_lib.translation._api_request', side_effect=APIConnectionError("API is down")), \
+             patch('text_translator.translator_lib.validation.is_translation_valid', return_value=True), \
+             patch('time.sleep'):  # Mock sleep to avoid waiting
+            with self.assertRaises(TranslatorError):
+                translation.get_translation("original", "test-model", "http://test.url", self.model_config)
 
 
 class TestTranslationExtraction(unittest.TestCase):
@@ -436,7 +440,10 @@ class TestApiAndModelHelpers(unittest.TestCase):
              patch('sys.stderr', new_callable=StringIO) as mock_stderr:
 
             mock_post.return_value.json.return_value = {"status": "ok"}
-            api_client._api_request("test/endpoint", {}, "http://test.url", debug=True)
+            # The retry decorator will call the function multiple times on failure,
+            # so we give it a success case here.
+            with patch('text_translator.translator_lib.api_client.retry_with_backoff', lambda: lambda f: f):
+                api_client._api_request("test/endpoint", {}, "http://test.url", debug=True)
             self.assertIn("DEBUG: API Request to endpoint", mock_stderr.getvalue())
 
     def test_ensure_model_loaded_needs_loading(self):
@@ -446,23 +453,24 @@ class TestApiAndModelHelpers(unittest.TestCase):
             self.assertEqual(mock_api_request.call_count, 2)
 
     def test_ensure_model_loaded_connection_error_info(self):
-        with patch('text_translator.translator_lib.api_client._api_request', side_effect=ConnectionError("Info error")):
-            with self.assertRaisesRegex(ConnectionError, "Error getting current model"):
+        """Test that ensure_model_loaded raises ModelLoadError on info failure."""
+        with patch('text_translator.translator_lib.api_client._api_request', side_effect=APIConnectionError("Info error")):
+            with self.assertRaisesRegex(ModelLoadError, "Error getting current model"):
                 api_client.ensure_model_loaded("test-model", "http://test.url")
 
     def test_api_request_get(self):
         """Test that _api_request can make a GET request."""
         with patch('requests.get') as mock_get:
             mock_get.return_value.json.return_value = {"status": "ok"}
-            api_client._api_request("test/endpoint", {}, "http://test.url", is_get=True)
+            with patch('text_translator.translator_lib.api_client.retry_with_backoff', lambda: lambda f: f):
+                api_client._api_request("test/endpoint", {}, "http://test.url", is_get=True)
             mock_get.assert_called_once()
 
     def test_check_server_status_connection_error(self):
-        """Test that check_server_status handles ConnectionError and exits."""
-        with patch('text_translator.translator_lib.api_client._api_request', side_effect=ConnectionError("Server down")), \
-             patch('sys.exit') as mock_exit:
-            api_client.check_server_status("http://test.url")
-            mock_exit.assert_called_once_with(1)
+        """Test that check_server_status raises APIConnectionError on failure."""
+        with patch('text_translator.translator_lib.api_client._api_request', side_effect=APIConnectionError("Server down")):
+            with self.assertRaisesRegex(APIConnectionError, "Could not connect"):
+                api_client.check_server_status("http://test.url")
 
     def test_ensure_model_loaded_verbose(self):
         """Test that ensure_model_loaded prints verbose output."""
@@ -477,10 +485,14 @@ class TestApiAndModelHelpers(unittest.TestCase):
             self.assertIn(call("Model loaded successfully."), mock_print.call_args_list)
 
     def test_ensure_model_loaded_connection_error_load(self):
-        """Test that ensure_model_loaded handles ConnectionError on model load."""
+        """Test that ensure_model_loaded raises ModelLoadError on model load failure."""
         with patch('text_translator.translator_lib.api_client._api_request') as mock_api_request:
-            mock_api_request.side_effect = [{"model_name": "other-model"}, ConnectionError("Load error")]
-            with self.assertRaisesRegex(ConnectionError, "Failed to load model"):
+            # First call for info succeeds, second for loading fails
+            mock_api_request.side_effect = [
+                {"model_name": "other-model"},
+                APIConnectionError("Load error")
+            ]
+            with self.assertRaisesRegex(ModelLoadError, "Failed to load model"):
                 api_client.ensure_model_loaded("test-model", "http://test.url")
 
 class TestTranslationValidation(unittest.TestCase):

@@ -30,6 +30,7 @@ from .translator_lib.core import translate_file
 from .translator_lib.options import TranslationOptions
 from .translator_lib import model_loader
 from .translator_lib.api_client import check_server_status, DEFAULT_API_BASE_URL
+from .translator_lib.exceptions import TranslatorError
 
 __version__ = "1.1.0"
 
@@ -117,6 +118,74 @@ def process_directory(args: argparse.Namespace, options: 'TranslationOptions') -
                 output_file = os.path.join(output_dir, item)
                 process_single_file(input_file, output_file, options)
 
+def main_logic(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    """
+    The core logic of the application after parsing arguments.
+    """
+    if not os.path.exists(args.input_path):
+        parser.error(f"Input path does not exist: {args.input_path}")
+    if args.refine and not args.draft_model:
+        parser.error("--draft-model is required when using --refine.")
+    if args.glossary_file and not os.path.exists(args.glossary_file):
+        parser.error(f"Glossary file not found: {args.glossary_file}")
+    if args.glossary_for and not (args.glossary_file or args.glossary_text):
+        parser.error("--glossary-for requires a glossary to be provided via --glossary-file or --glossary-text.")
+
+    # --- Load Model Configurations ---
+    try:
+        all_model_configs = model_loader.load_model_configs(args.models_file)
+        main_model_config = model_loader.get_model_config(args.model, all_model_configs)
+        draft_model_config = {}
+        if args.draft_model:
+            draft_model_config = model_loader.get_model_config(args.draft_model, all_model_configs)
+    except model_loader.ModelConfigError as e:
+        parser.error(str(e))
+
+    # --- Glossary Processing ---
+    glossary_text = args.glossary_text
+    if args.glossary_file:
+        with open(args.glossary_file, 'r', encoding='utf-8') as f:
+            glossary_text = f.read()
+
+    # --- API and Options Setup ---
+    api_url = args.api_base_url or os.environ.get("OOBABOOGA_API_BASE_URL") or DEFAULT_API_BASE_URL
+    if not args.quiet:
+        print("Checking server status...")
+    check_server_status(api_url, args.debug)
+    if not args.quiet:
+        print("Server is active.")
+
+    options = TranslationOptions(
+        input_path=args.input_path,
+        model_name=args.model,
+        output_path=args.output,
+        api_base_url=api_url,
+        glossary_text=glossary_text,
+        glossary_for=args.glossary_for,
+        refine_mode=args.refine,
+        draft_model=args.draft_model,
+        num_drafts=args.num_drafts,
+        reasoning_for=args.reasoning_for,
+        line_by_line=args.line_by_line,
+        overwrite=args.overwrite,
+        verbose=args.verbose,
+        quiet=args.quiet,
+        debug=args.debug,
+        model_config=main_model_config,
+        draft_model_config=draft_model_config,
+    )
+
+    # --- Path Processing ---
+    if os.path.isdir(args.input_path):
+        if not args.quiet:
+            print(f"Input is a directory. Translating all files in '{args.input_path}'...")
+        process_directory(args, options)
+    elif os.path.isfile(args.input_path):
+        process_single_file(args.input_path, args.output, options)
+    else:
+        parser.error(f"Input path is not a valid file or directory: {args.input_path}")
+
+
 def main() -> None:
     """Defines and executes the command-line interface for the translator.
 
@@ -189,70 +258,15 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    # --- Argument Validation ---
-    if not os.path.exists(args.input_path):
-        parser.error(f"Input path does not exist: {args.input_path}")
-    if args.refine and not args.draft_model:
-        parser.error("--draft-model is required when using --refine.")
-    if args.glossary_file and not os.path.exists(args.glossary_file):
-        parser.error(f"Glossary file not found: {args.glossary_file}")
-    if args.glossary_for and not (args.glossary_file or args.glossary_text):
-        parser.error("--glossary-for requires a glossary to be provided via --glossary-file or --glossary-text.")
-
-    # --- Load Model Configurations ---
     try:
-        all_model_configs = model_loader.load_model_configs(args.models_file)
-        main_model_config = model_loader.get_model_config(args.model, all_model_configs)
-        draft_model_config = {}
-        if args.draft_model:
-            draft_model_config = model_loader.get_model_config(args.draft_model, all_model_configs)
-    except model_loader.ModelConfigError as e:
-        parser.error(str(e))
+        main_logic(args, parser)
+    except TranslatorError as e:
+        print(f"\n---FATAL ERROR---\n{e}\n-------------------\n", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"\n---UNEXPECTED FATAL ERROR---\n{e}\n-------------------\n", file=sys.stderr)
+        sys.exit(1)
 
-
-    # --- Glossary Processing ---
-    glossary_text = args.glossary_text
-    if args.glossary_file:
-        with open(args.glossary_file, 'r', encoding='utf-8') as f:
-            glossary_text = f.read()
-
-    # --- API and Options Setup ---
-    api_url = args.api_base_url or os.environ.get("OOBABOOGA_API_BASE_URL") or DEFAULT_API_BASE_URL
-    if not args.quiet:
-        print("Checking server status...")
-    check_server_status(api_url, args.debug)
-    if not args.quiet:
-        print("Server is active.")
-
-    options = TranslationOptions(
-        input_path=args.input_path,
-        model_name=args.model,
-        output_path=args.output,
-        api_base_url=api_url,
-        glossary_text=glossary_text,
-        glossary_for=args.glossary_for,
-        refine_mode=args.refine,
-        draft_model=args.draft_model,
-        num_drafts=args.num_drafts,
-        reasoning_for=args.reasoning_for,
-        line_by_line=args.line_by_line,
-        overwrite=args.overwrite,
-        verbose=args.verbose,
-        quiet=args.quiet,
-        debug=args.debug,
-        model_config=main_model_config,
-        draft_model_config=draft_model_config,
-    )
-
-    # --- Path Processing ---
-    if os.path.isdir(args.input_path):
-        if not args.quiet:
-            print(f"Input is a directory. Translating all files in '{args.input_path}'...")
-        process_directory(args, options)
-    elif os.path.isfile(args.input_path):
-        process_single_file(args.input_path, args.output, options)
-    else:
-        parser.error(f"Input path is not a valid file or directory: {args.input_path}")
 
 if __name__ == "__main__":
     main()

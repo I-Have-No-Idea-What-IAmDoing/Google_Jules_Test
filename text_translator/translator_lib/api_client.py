@@ -3,13 +3,42 @@ import sys
 import os
 import time
 import json
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Callable, TypeVar
+from functools import wraps
+from .exceptions import APIConnectionError, APIStatusError, ModelLoadError
 
 # Default URL for the oobabooga API. This is the standard address when running
 # the server locally with the API enabled. It can be overridden by command-line
 # arguments or environment variables.
 DEFAULT_API_BASE_URL: str = "http://127.0.0.1:5000/v1"
 
+T = TypeVar('T')
+
+def retry_with_backoff(retries: int = 3, backoff_in_seconds: float = 1.0, border_base: int = 2) -> Callable[[Callable[..., T]], Callable[..., T]]:
+    """
+    A decorator for retrying a function with exponential backoff.
+    """
+    def rwb(f: Callable[..., T]) -> Callable[..., T]:
+        @wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> T:
+            attempt = 0
+            while True:
+                try:
+                    return f(*args, **kwargs)
+                except (APIConnectionError, APIStatusError) as e:
+                    if isinstance(e, APIStatusError) and e.status_code < 500:
+                        raise
+
+                    if attempt >= retries:
+                        raise
+
+                    sleep_time = backoff_in_seconds * (border_base ** attempt)
+                    time.sleep(sleep_time)
+                    attempt += 1
+        return wrapper
+    return rwb
+
+@retry_with_backoff()
 def _api_request(endpoint: str, payload: Dict[str, Any], api_base_url: str, timeout: int = 60, is_get: bool = False, debug: bool = False) -> Dict[str, Any]:
     """Sends a standardized request to the API and handles the response.
 
@@ -34,8 +63,8 @@ def _api_request(endpoint: str, payload: Dict[str, Any], api_base_url: str, time
         The JSON response from the API, parsed into a dictionary.
 
     Raises:
-        ConnectionError: If the request fails due to a network issue, a timeout,
-                         or if the server returns an HTTP error status code.
+        APIConnectionError: If the request fails due to a network issue or timeout.
+        APIStatusError: If the server returns an HTTP error status code.
     """
     headers = {"Content-Type": "application/json"}
     if debug:
@@ -47,6 +76,7 @@ def _api_request(endpoint: str, payload: Dict[str, Any], api_base_url: str, time
             response = requests.get(f"{api_base_url}/{endpoint}", timeout=timeout)
         else:
             response = requests.post(f"{api_base_url}/{endpoint}", json=payload, headers=headers, timeout=timeout)
+
         response.raise_for_status()
         response_data = response.json()
 
@@ -54,8 +84,11 @@ def _api_request(endpoint: str, payload: Dict[str, Any], api_base_url: str, time
             print(f"--- DEBUG: API Response ---\n{json.dumps(response_data, indent=2)}\n--------------------------------", file=sys.stderr)
 
         return response_data
+    except requests.exceptions.HTTPError as e:
+        raise APIStatusError(f"API request to {endpoint} failed", e.response.status_code)
     except requests.exceptions.RequestException as e:
-        raise ConnectionError(f"API request to {endpoint} failed: {e}")
+        raise APIConnectionError(f"API request to {endpoint} failed: {e}")
+
 
 def check_server_status(api_base_url: str, debug: bool = False) -> None:
     """Checks if the API server is running and available.
@@ -69,6 +102,9 @@ def check_server_status(api_base_url: str, debug: bool = False) -> None:
         api_base_url: The base URL of the API server to check.
         debug: If True, passes the debug flag to the underlying API request
                for more detailed output.
+
+    Raises:
+        APIConnectionError: If the server is not reachable.
     """
     if debug:
         print(f"--- DEBUG: Checking server status at {api_base_url} ---", file=sys.stderr)
@@ -76,15 +112,11 @@ def check_server_status(api_base_url: str, debug: bool = False) -> None:
         _api_request("internal/model/info", {}, api_base_url, is_get=True, timeout=10, debug=debug)
         if debug:
             print(f"--- DEBUG: Server is active. ---", file=sys.stderr)
-    except ConnectionError:
-        print(
-            f"\n---FATAL ERROR---\n"
+    except (APIConnectionError, APIStatusError) as e:
+        raise APIConnectionError(
             f"Could not connect to the translation API server at '{api_base_url}'.\n"
-            f"Please ensure the oobabooga web UI server is running and the API is enabled.\n"
-            f"-------------------\n",
-            file=sys.stderr
-        )
-        sys.exit(1)
+            f"Please ensure the oobabooga web UI server is running and the API is enabled."
+        ) from e
 
 def ensure_model_loaded(
     model_name: str,
@@ -110,14 +142,14 @@ def ensure_model_loaded(
         debug: If True, passes the debug flag to underlying API requests.
 
     Raises:
-        ConnectionError: If the function fails to get the current model info or
+        ModelLoadError: If the function fails to get the current model info or
                          if the request to load a new model fails.
     """
     try:
         current_model_data = _api_request("internal/model/info", {}, api_base_url, is_get=True, debug=debug)
         current_model = current_model_data.get("model_name")
-    except (ConnectionError, KeyError) as e:
-        raise ConnectionError(f"Error getting current model: {e}")
+    except (APIConnectionError, APIStatusError, KeyError) as e:
+        raise ModelLoadError(f"Error getting current model: {e}")
 
     # Determine if the model needs to be switched or reloaded with new flags
     force_reload = model_config and "llama_server_flags" in model_config
@@ -135,5 +167,5 @@ def ensure_model_loaded(
             if verbose:
                 print("Model loaded successfully.")
             time.sleep(5)
-        except ConnectionError as e:
-            raise ConnectionError(f"Failed to load model '{model_name}': {e}")
+        except (APIConnectionError, APIStatusError) as e:
+            raise ModelLoadError(f"Failed to load model '{model_name}': {e}")
