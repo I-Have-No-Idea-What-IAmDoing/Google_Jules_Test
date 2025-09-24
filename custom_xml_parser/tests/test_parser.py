@@ -430,6 +430,36 @@ class TestParser(unittest.TestCase):
         self.assertIn("#comments", parsed["Action"])
         self.assertEqual(parsed["Action"]["#comments"], ["trailing comment"])
 
+    def test_preserves_indentation_in_text(self):
+        """Tests that indentation within text blocks is preserved during deserialization."""
+        data = (
+            "[Action]\n"
+            "    <Data>\n"
+            "        line 1\n"
+            "          line 2\n"
+            "            line 3\n"
+            "    </Data>\n"
+            "[/Action]"
+        )
+
+        parsed = deserialize(data)
+
+        expected_text = (
+            "line 1\n"
+            "  line 2\n"
+            "    line 3"
+        )
+
+        self.assertIn("Action", parsed)
+        self.assertIn("Data", parsed["Action"])
+        self.assertIn("#text", parsed["Action"]["Data"])
+        self.assertEqual(parsed["Action"]["Data"]["#text"], expected_text)
+
+        # Also ensure that a round trip is consistent.
+        serialized = serialize(parsed)
+        re_parsed = deserialize(serialized)
+        self.assertEqual(parsed, re_parsed)
+
     def test_mismatched_action_tag(self):
         """Tests that mismatched action tags raise a ValueError."""
         data = "[Action]\n</Action>"
