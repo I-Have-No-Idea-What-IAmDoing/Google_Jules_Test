@@ -152,15 +152,23 @@ def ensure_model_loaded(
         raise ModelLoadError(f"Error getting current model: {e}")
 
     # Determine if the model needs to be switched or reloaded with new flags
-    force_reload = model_config and "llama_server_flags" in model_config
+    # Combine params and server flags for the payload.
+    args_to_pass = {}
+    if model_config:
+        args_to_pass.update(model_config.get("params", {}))
+        args_to_pass.update(model_config.get("extra_flags", {}))
+
+    # A reload is forced if specific server flags are present.
+    # We also reload if the model name is different.
+    force_reload = model_config and "extra_flags" in model_config
     if current_model != model_name or force_reload:
         if verbose:
             action = "Reloading" if force_reload and current_model == model_name else "Switching"
-            print(f"{action} model to '{model_name}' with new flags...")
+            print(f"{action} model to '{model_name}' with new configuration...")
 
         payload = {"model_name": model_name}
-        if force_reload:
-            payload["args"] = model_config["llama_server_flags"]
+        if args_to_pass:
+            payload["args"] = args_to_pass
 
         try:
             _api_request("internal/model/load", payload, api_base_url, timeout=300, debug=debug)
