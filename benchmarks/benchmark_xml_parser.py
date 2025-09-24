@@ -1,17 +1,16 @@
+import argparse
+import json
 import os
 import sys
 import timeit
-from typing import Any, Dict
-
-# Add the root directory to the Python path to allow for absolute imports
-# This is necessary because the script is not in a package.
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from typing import Any, Dict, List
 
 from custom_xml_parser.parser import deserialize, serialize
 
-# --- Configuration ---
-BENCHMARK_ITERATIONS = 100
-DATA_FILES = [
+# --- Default Configuration ---
+DEFAULT_ITERATIONS = 100
+DEFAULT_REPEAT = 5
+DEFAULT_DATA_FILES = [
     "custom_xml_parser/tests/data/yuyuko_j.txt",
     "custom_xml_parser/tests/data/yuyuko_ev_j.txt",
 ]
@@ -22,63 +21,97 @@ def load_test_data(file_path: str) -> str:
         with open(file_path, 'r', encoding='utf-8') as f:
             return f.read()
     except FileNotFoundError:
-        print(f"Error: Data file not found at '{file_path}'.")
-        print("Please ensure the script is run from the repository's root directory.")
+        print(f"Error: Data file not found at '{file_path}'.", file=sys.stderr)
+        print("Please ensure the path is correct and the script is run from the repository's root directory.", file=sys.stderr)
+        sys.exit(1)
+    except IOError as e:
+        print(f"Error reading file '{file_path}': {e}", file=sys.stderr)
         sys.exit(1)
 
-def run_deserialize_benchmark(content: str, iterations: int) -> float:
+def run_deserialize_benchmark(content: str, iterations: int, repeat: int) -> float:
     """Runs the benchmark for the deserialize function."""
     timer = timeit.Timer(lambda: deserialize(content))
-    total_time = timer.timeit(number=iterations)
-    return total_time / iterations
+    times = timer.repeat(repeat=repeat, number=iterations)
+    best_time = min(times)
+    return best_time / iterations
 
-def run_serialize_benchmark(data: Dict[str, Any], iterations: int) -> float:
+def run_serialize_benchmark(data: Dict[str, Any], iterations: int, repeat: int) -> float:
     """Runs the benchmark for the serialize function."""
     timer = timeit.Timer(lambda: serialize(data))
-    total_time = timer.timeit(number=iterations)
-    return total_time / iterations
+    times = timer.repeat(repeat=repeat, number=iterations)
+    best_time = min(times)
+    return best_time / iterations
 
 def main():
     """
     Main function to execute the benchmark suite.
-
-    This function iterates through the predefined data files and performs
-    the following actions for each:
-    1.  Loads the file content.
-    2.  Runs a benchmark on the `deserialize` function to measure its
-        performance in parsing the text into a dictionary.
-    3.  Deserializes the content to get the data structure needed for the
-        serialization benchmark.
-    4.  Runs a benchmark on the `serialize` function to measure its
-        performance in converting the dictionary back into a string.
-    5.  Prints the results in a formatted table.
+    Parses command-line arguments and runs the benchmarks.
     """
-    print("--- Custom XML Parser Benchmark ---")
-    print(f"Iterations per test: {BENCHMARK_ITERATIONS}\n")
-    print(f"{'Data File':<40} | {'Avg. Deserialize Time (ms)':<30} | {'Avg. Serialize Time (ms)':<30}")
-    print("-" * 105)
+    parser = argparse.ArgumentParser(
+        description="Run benchmarks for the custom XML parser.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    parser.add_argument(
+        '--data-files',
+        nargs='+',
+        default=DEFAULT_DATA_FILES,
+        help="Paths to the data files to use for benchmarking."
+    )
+    parser.add_argument(
+        '--iterations',
+        type=int,
+        default=DEFAULT_ITERATIONS,
+        help="Number of times to run the operation within each benchmark repetition."
+    )
+    parser.add_argument(
+        '--repeat',
+        type=int,
+        default=DEFAULT_REPEAT,
+        help="Number of times to repeat the benchmark. The best result is taken."
+    )
+    parser.add_argument(
+        '--output-json',
+        action='store_true',
+        help="Output the results in JSON format instead of a human-readable table."
+    )
+    args = parser.parse_args()
 
-    for file_path in DATA_FILES:
-        # Load the raw text content from the file.
+    results = []
+
+    for file_path in args.data_files:
         raw_content = load_test_data(file_path)
 
         # 1. Benchmark Deserialization
-        avg_deserialize_time = run_deserialize_benchmark(raw_content, BENCHMARK_ITERATIONS)
+        avg_deserialize_time = run_deserialize_benchmark(raw_content, args.iterations, args.repeat)
 
-        # Prepare data for serialization benchmark by deserializing it once.
-        # This is done outside the timed loop to not affect serialization timing.
+        # Prepare data for serialization benchmark
         parsed_data = deserialize(raw_content)
 
         # 2. Benchmark Serialization
-        avg_serialize_time = run_serialize_benchmark(parsed_data, BENCHMARK_ITERATIONS)
+        avg_serialize_time = run_serialize_benchmark(parsed_data, args.iterations, args.repeat)
 
-        # Print results for the current file.
-        file_name = os.path.basename(file_path)
-        deserialize_ms = avg_deserialize_time * 1000
-        serialize_ms = avg_serialize_time * 1000
-        print(f"{file_name:<40} | {f'{deserialize_ms:.4f} ms':<30} | {f'{serialize_ms:.4f} ms':<30}")
+        results.append({
+            "file": os.path.basename(file_path),
+            "deserialize_time_ms": avg_deserialize_time * 1000,
+            "serialize_time_ms": avg_serialize_time * 1000
+        })
 
-    print("\n--- Benchmark Complete ---")
+    if args.output_json:
+        output_data = {
+            "iterations": args.iterations,
+            "repetitions": args.repeat,
+            "benchmarks": results
+        }
+        print(json.dumps(output_data, indent=2))
+    else:
+        print("--- Custom XML Parser Benchmark ---")
+        print(f"Iterations per repetition: {args.iterations}")
+        print(f"Repetitions: {args.repeat} (best time taken)")
+        print(f"\n{'Data File':<40} | {'Best Deserialize Time (ms)':<30} | {'Best Serialize Time (ms)':<30}")
+        print("-" * 105)
+        for res in results:
+            print(f'{res["file"]:<40} | {f"{res['deserialize_time_ms']:.4f} ms":<30} | {f"{res['serialize_time_ms']:.4f} ms":<30}')
+        print("\n--- Benchmark Complete ---")
 
 if __name__ == "__main__":
     main()
