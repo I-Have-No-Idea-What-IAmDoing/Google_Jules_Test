@@ -481,7 +481,7 @@ class TestApiAndModelHelpers(unittest.TestCase):
                  api_client.ensure_model_loaded("test-model", "http://test.url", verbose=True)
 
             # Check that verbose messages were printed
-            self.assertIn(call("Switching model to 'test-model' with new flags..."), mock_print.call_args_list)
+            self.assertIn(call("Switching model to 'test-model' with new configuration..."), mock_print.call_args_list)
             self.assertIn(call("Model loaded successfully."), mock_print.call_args_list)
 
     def test_ensure_model_loaded_connection_error_load(self):
