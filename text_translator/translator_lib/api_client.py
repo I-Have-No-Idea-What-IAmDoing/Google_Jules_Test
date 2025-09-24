@@ -15,8 +15,22 @@ DEFAULT_API_BASE_URL: str = "http://127.0.0.1:5000/v1"
 T = TypeVar('T')
 
 def retry_with_backoff(retries: int = 3, backoff_in_seconds: float = 1.0, border_base: int = 2) -> Callable[[Callable[..., T]], Callable[..., T]]:
-    """
-    A decorator for retrying a function with exponential backoff.
+    """Creates a decorator that retries a function with exponential backoff.
+
+    This decorator is designed to handle transient errors, such as network
+    hiccups or temporary server unavailability, by automatically re-running the
+    decorated function if it raises a `ConnectionError`. The delay between
+    retries increases exponentially to avoid overwhelming the server.
+
+    Args:
+        retries: The maximum number of times to retry the function.
+        backoff_in_seconds: The initial delay between retries. This value is
+            multiplied by `border_base` raised to the power of the current
+            attempt number.
+        border_base: The base for the exponential backoff calculation.
+
+    Returns:
+        A decorator that can be applied to a function to give it retry behavior.
     """
     def rwb(f: Callable[..., T]) -> Callable[..., T]:
         @wraps(f)

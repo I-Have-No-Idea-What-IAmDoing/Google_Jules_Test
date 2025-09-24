@@ -26,7 +26,18 @@ class TestCommandLineInterface(unittest.TestCase):
     @patch('text_translator.cli.check_server_status')
     @patch('text_translator.cli.process_single_file')
     def test_cli_single_file(self, mock_process_single_file, mock_check_server_status, mock_model_loader):
-        """Test the CLI with a single file input."""
+        """Tests that the CLI correctly processes a single file input.
+
+        This test simulates running the CLI with basic arguments for a single
+        file. It ensures that the core functions for server checking and file
+        processing are called with the expected arguments, and that the
+        `TranslationOptions` object is correctly constructed.
+
+        Args:
+            mock_process_single_file: Mock for the `process_single_file` function.
+            mock_check_server_status: Mock for the `check_server_status` function.
+            mock_model_loader: Mock for the `model_loader` module.
+        """
         # Setup mock for model_loader
         mock_model_loader.load_model_configs.return_value = {"test-model": {"params": {}}}
         mock_model_loader.get_model_config.return_value = {"params": {"temp": 0.5}}
@@ -48,7 +59,17 @@ class TestCommandLineInterface(unittest.TestCase):
     @patch('text_translator.cli.check_server_status')
     @patch('text_translator.cli.process_directory')
     def test_cli_directory_processing(self, mock_process_directory, mock_check_server_status, mock_model_loader):
-        """Test the CLI with a directory input."""
+        """Tests that the CLI correctly processes a directory input.
+
+        This test checks the CLI's behavior when the input path is a directory.
+        It verifies that the `process_directory` function is called and that a
+        `TranslationOptions` object is correctly passed to it.
+
+        Args:
+            mock_process_directory: Mock for the `process_directory` function.
+            mock_check_server_status: Mock for the `check_server_status` function.
+            mock_model_loader: Mock for the `model_loader` module.
+        """
         mock_model_loader.load_model_configs.return_value = {"test-model": {}}
         mock_model_loader.get_model_config.return_value = {}
 
@@ -65,7 +86,15 @@ class TestCommandLineInterface(unittest.TestCase):
 
     @patch('sys.stdout', new_callable=StringIO)
     def test_cli_version_flag(self, mock_stdout):
-        """Test the --version flag."""
+        """Tests that the --version flag prints the version and exits.
+
+        This test verifies that when the `--version` argument is passed, the
+        script prints the correct version string to stdout and exits with a
+        status code of 0.
+
+        Args:
+            mock_stdout: A mock for `sys.stdout` to capture the output.
+        """
         test_args = ["cli.py", "--version"]
         with patch.object(sys, 'argv', test_args):
             with self.assertRaises(SystemExit):
@@ -77,7 +106,18 @@ class TestCommandLineInterface(unittest.TestCase):
     @patch('text_translator.cli.check_server_status')
     @patch('sys.stderr', new_callable=StringIO)
     def test_cli_argument_validation_errors(self, mock_stderr, mock_check_server_status, mock_model_loader):
-        """Test that the CLI exits on various argument validation errors."""
+        """Tests that the CLI exits gracefully on argument validation errors.
+
+        This test covers multiple scenarios where the provided command-line
+        arguments are invalid, such as using `--refine` without `--draft-model`
+        or providing a non-existent input path. It ensures the script exits
+        and prints an appropriate error message.
+
+        Args:
+            mock_stderr: A mock for `sys.stderr` to capture error output.
+            mock_check_server_status: Mock for the `check_server_status` function.
+            mock_model_loader: Mock for the `model_loader` module.
+        """
         mock_model_loader.load_model_configs.return_value = {"r": {}, "m": {}}
         mock_model_loader.get_model_config.return_value = {}
 
@@ -97,7 +137,17 @@ class TestCommandLineInterface(unittest.TestCase):
     @patch('text_translator.cli.check_server_status')
     @patch('sys.stderr', new_callable=StringIO)
     def test_cli_glossary_validation_error(self, mock_stderr, mock_check_server_status, mock_model_loader):
-        """Test that the CLI exits if --glossary-for is used without a glossary."""
+        """Tests that the CLI validates the use of --glossary-for.
+
+        This test ensures that the script exits with an error if the
+        `--glossary-for` argument is used without providing a glossary via
+        `--glossary-file` or `--glossary-text`.
+
+        Args:
+            mock_stderr: A mock for `sys.stderr` to capture error output.
+            mock_check_server_status: Mock for the `check_server_status` function.
+            mock_model_loader: Mock for the `model_loader` module.
+        """
         mock_model_loader.load_model_configs.return_value = {"m": {}}
         mock_model_loader.get_model_config.return_value = {}
 
@@ -109,7 +159,17 @@ class TestCommandLineInterface(unittest.TestCase):
     @patch('text_translator.cli.translate_file', side_effect=Exception("Core error"))
     @patch('sys.stderr', new_callable=StringIO)
     def test_process_single_file_error_handling(self, mock_stderr, mock_translate_file):
-        """Test that process_single_file handles exceptions gracefully."""
+        """Tests that `process_single_file` handles exceptions gracefully.
+
+        This test ensures that if the core `translate_file` function raises an
+        exception, the `process_single_file` wrapper catches it and prints a
+        user-friendly error message to stderr instead of crashing.
+
+        Args:
+            mock_stderr: A mock for `sys.stderr` to capture error output.
+            mock_translate_file: A mock for `translate_file` that raises an
+                                 exception.
+        """
         options = TranslationOptions(input_path=self.input_file, model_name="test")
         cli.process_single_file(self.input_file, None, options)
         self.assertIn("Error processing file", mock_stderr.getvalue())
@@ -118,7 +178,17 @@ class TestCommandLineInterface(unittest.TestCase):
     @patch('text_translator.cli.check_server_status')
     @patch('text_translator.cli.process_single_file')
     def test_cli_debug_flag(self, mock_process_single_file, mock_check_server_status, mock_model_loader):
-        """Test the CLI with the --debug flag."""
+        """Tests that the --debug flag is correctly passed to options.
+
+        This test verifies that when the `--debug` command-line flag is used,
+        the resulting `TranslationOptions` object has its `debug` attribute
+        set to True.
+
+        Args:
+            mock_process_single_file: Mock for the `process_single_file` function.
+            mock_check_server_status: Mock for the `check_server_status` function.
+            mock_model_loader: Mock for the `model_loader` module.
+        """
         mock_model_loader.load_model_configs.return_value = {"test-model": {}}
         mock_model_loader.get_model_config.return_value = {}
 
@@ -133,7 +203,17 @@ class TestCommandLineInterface(unittest.TestCase):
     @patch('text_translator.cli.check_server_status')
     @patch('text_translator.cli.process_single_file')
     def test_cli_reasoning_for_argument(self, mock_process_single_file, mock_check_server_status, mock_model_loader):
-        """Test the CLI with the --reasoning-for argument."""
+        """Tests that the --reasoning-for argument is correctly passed.
+
+        This test ensures that when the `--reasoning-for` command-line argument
+        is provided, its value is correctly stored in the `reasoning_for`
+        attribute of the `TranslationOptions` object.
+
+        Args:
+            mock_process_single_file: Mock for the `process_single_file` function.
+            mock_check_server_status: Mock for the `check_server_status` function.
+            mock_model_loader: Mock for the `model_loader` module.
+        """
         mock_model_loader.load_model_configs.return_value = {"test-model": {}}
         mock_model_loader.get_model_config.return_value = {}
 
@@ -149,7 +229,17 @@ class TestCommandLineInterface(unittest.TestCase):
     @patch('text_translator.cli.check_server_status')
     @patch('text_translator.cli.process_directory')
     def test_main_api_url_from_env(self, mock_process, mock_check_server_status, mock_model_loader):
-        """Test that the API URL is taken from the environment variable."""
+        """Tests that the API URL is correctly sourced from an environment variable.
+
+        This test verifies that if the `OOBABOOGA_API_BASE_URL` environment
+        variable is set, its value is used for the API base URL, overriding
+        the default.
+
+        Args:
+            mock_process: Mock for the `process_directory` function.
+            mock_check_server_status: Mock for the `check_server_status` function.
+            mock_model_loader: Mock for the `model_loader` module.
+        """
         mock_model_loader.load_model_configs.return_value = {"m": {}}
         mock_model_loader.get_model_config.return_value = {}
 
@@ -163,18 +253,29 @@ class TestCommandLineInterface(unittest.TestCase):
         self.assertEqual(passed_options.api_base_url, 'http://env.url')
 
 class TestDirectoryProcessing(unittest.TestCase):
+    """Tests for directory processing functionality in the CLI."""
 
     def setUp(self):
+        """Sets up a temporary directory for directory-related tests."""
         self.test_dir = tempfile.mkdtemp()
         self.output_dir = os.path.join(self.test_dir, "output")
         self.base_options = TranslationOptions(input_path=self.test_dir, model_name="test")
 
     def tearDown(self):
+        """Removes the temporary directory after tests are run."""
         shutil.rmtree(self.test_dir)
 
     @patch('text_translator.cli.process_single_file')
     def test_process_directory_recursive(self, mock_process_single_file):
-        """Test recursive directory processing."""
+        """Tests that directory processing works recursively.
+
+        This test sets up a nested directory structure and verifies that when
+        run in recursive mode, `process_directory` finds and calls
+        `process_single_file` for files in both the root and subdirectories.
+
+        Args:
+            mock_process_single_file: Mock for the `process_single_file` function.
+        """
         dir1 = os.path.join(self.test_dir, "dir1")
         os.makedirs(dir1)
         file1 = os.path.join(self.test_dir, "file1.txt")
@@ -190,7 +291,15 @@ class TestDirectoryProcessing(unittest.TestCase):
 
     @patch('text_translator.cli.process_single_file')
     def test_process_directory_non_recursive(self, mock_process_single_file):
-        """Test non-recursive directory processing."""
+        """Tests that directory processing can be limited to non-recursive.
+
+        This test sets up a nested directory structure and verifies that when
+        run in non-recursive mode, `process_directory` only processes the file
+        in the top-level directory, ignoring the one in the subdirectory.
+
+        Args:
+            mock_process_single_file: Mock for the `process_single_file` function.
+        """
         dir1 = os.path.join(self.test_dir, "dir1")
         os.makedirs(dir1)
         file1 = os.path.join(self.test_dir, "file1.txt")
