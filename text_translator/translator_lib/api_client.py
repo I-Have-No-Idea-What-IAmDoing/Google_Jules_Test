@@ -161,7 +161,8 @@ def ensure_model_loaded(
         payload = {"model_name": model_name}
         if force_reload:
             payload["args"] = model_config["llama_server_flags"]
-
+        if verbose:
+            print(f"Loading Model with argument: {payload}")
         try:
             _api_request("internal/model/load", payload, api_base_url, timeout=300, debug=debug)
             if verbose:
