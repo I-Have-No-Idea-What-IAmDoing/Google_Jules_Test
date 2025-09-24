@@ -40,6 +40,7 @@ def is_translation_valid(original_text: str, translated_text: str, debug: bool =
     # --- Pre-processing ---
     # Strip thinking tags before any other validation
     translated_text = strip_thinking_tags(translated_text)
+    original_text = strip_thinking_tags(original_text)
 
     cleaned_translation = translated_text.strip()
     cleaned_original = original_text.strip()
