@@ -52,28 +52,36 @@ def deserialize(text: str) -> Dict[str, Any]:
     comment_buffer: List[str] = []
 
     def flush_text_buffer():
-        """Processes and clears the text buffer into the current dictionary.
+        """Processes, dedents, and clears the text buffer into the current dictionary.
 
-        This inner function is called whenever a new tag is encountered or when
-        the parsing of the file completes. It takes the lines of text collected
-        in the `text_buffer`, joins them with newlines, and assigns the result
-        to the `'#text'` key of the dictionary currently at the top of the
-        `dict_stack`.
-
-        If a `'#text'` key already exists in the current dictionary, the new
-        content is appended to it, separated by a newline. This handles cases
-        of interleaved text and tags. After processing, the `text_buffer` is
-        cleared to prepare for the next block of text.
+        This inner function dedents the collected text block to preserve relative
+        indentation while removing the block-level indentation. This makes serialization
+        cleaner as the serializer can apply its own indentation without conflicts.
         """
-        if text_buffer:
+        if not text_buffer:
+            return
+
+        # --- DEDENT LOGIC ---
+        lines_with_content = [line for line in text_buffer if line.strip()]
+        if not lines_with_content:
+            # All lines are empty or just whitespace.
             content = "\n".join(text_buffer)
-            if content:
-                current_dict = dict_stack[-1]
-                if "#text" in current_dict:
-                    current_dict["#text"] += "\n" + content
-                else:
-                    current_dict["#text"] = content
-            text_buffer.clear()
+        else:
+            # Calculate the minimum indentation from lines that have content.
+            min_indent = min(len(line) - len(line.lstrip()) for line in lines_with_content)
+            # Strip the common indentation from all lines.
+            # Lines that are only whitespace are preserved as-is.
+            dedented_lines = [line[min_indent:] if line.strip() else line for line in text_buffer]
+            content = "\n".join(dedented_lines)
+        # --- END DEDENT LOGIC ---
+
+        if content:
+            current_dict = dict_stack[-1]
+            if "#text" in current_dict:
+                current_dict["#text"] += "\n" + content
+            else:
+                current_dict["#text"] = content
+        text_buffer.clear()
 
     for line_num, line in enumerate(lines, 1):
         parts = line.split('#', 1)
@@ -178,10 +186,9 @@ def deserialize(text: str) -> Dict[str, Any]:
                 tag_stack.append(('[', tag_name))
                 continue
 
-        text_to_append = stripped_line
-        if comment_part:
-            text_to_append += f"  # {comment_part}"
-        text_buffer.append(text_to_append)
+        # If a line is not a tag, it's treated as text content.
+        # We append the original line to preserve indentation and inline comments.
+        text_buffer.append(line)
 
     flush_text_buffer()
 
