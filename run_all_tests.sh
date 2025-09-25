@@ -7,6 +7,6 @@ echo "--- Running tests for custom_xml_parser ---"
 python -m unittest custom_xml_parser.tests.test_parser custom_xml_parser.tests.test_cli
 echo
 echo "--- Running tests for text_translator ---"
-python -m unittest text_translator.tests.test_cli text_translator.tests.test_core text_translator.tests.test_model_loader
+python -m unittest text_translator.tests.test_cli text_translator.tests.test_core text_translator.tests.test_model_loader text_translator.tests.test_color_console
 echo
 echo "✅ All checks passed successfully!"

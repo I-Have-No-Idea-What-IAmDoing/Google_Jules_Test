@@ -31,6 +31,7 @@ from .translator_lib.options import TranslationOptions
 from .translator_lib import model_loader
 from .translator_lib.api_client import check_server_status, DEFAULT_API_BASE_URL
 from .translator_lib.exceptions import TranslatorError
+from . import color_console as cc
 
 __version__ = "1.1.0"
 
@@ -51,10 +52,9 @@ def process_single_file(input_file: str, output_file: Optional[str], options: 'T
                  the translation job.
     """
     try:
-        if not options.quiet:
-            print(f"Starting translation for '{input_file}'...")
-            if options.refine_mode:
-                print(f"Using refinement mode with draft model '{options.draft_model}' and refiner '{options.model_name}'.")
+        cc.print_info(f"Starting translation for '{input_file}'...", quiet=options.quiet)
+        if options.refine_mode:
+            cc.print_info(f"Using refinement mode with draft model '{options.draft_model}' and refiner '{options.model_name}'.", quiet=options.quiet)
 
         # Update options for the single file being processed
         options.input_path = input_file
@@ -70,19 +70,13 @@ def process_single_file(input_file: str, output_file: Optional[str], options: 'T
 
             with open(output_file, 'w', encoding='utf-8') as f:
                 f.write(translated_content)
-            if not options.quiet:
-                print(f"\nTranslation complete. Output saved to {output_file}")
+            cc.print_success(f"\nTranslation complete. Output saved to {output_file}", quiet=options.quiet)
         else:
             # Print to stdout if no output file is specified
-            if options.quiet:
-                print(translated_content)
-            else:
-                print("\n--- Translated Content ---")
-                print(translated_content)
-                print("--------------------------")
+            cc.print_translation(translated_content, quiet=options.quiet)
 
     except Exception as e:
-        print(f"Error processing file {input_file}: {e}", file=sys.stderr)
+        cc.print_error(f"Error processing file {input_file}: {e}")
 
 def process_directory(args: argparse.Namespace, options: 'TranslationOptions') -> None:
     """Handles the translation process for an entire directory.
@@ -172,11 +166,9 @@ def main_logic(args: argparse.Namespace, parser: argparse.ArgumentParser) -> Non
 
     # --- API and Options Setup ---
     api_url = args.api_base_url or os.environ.get("OOBABOOGA_API_BASE_URL") or DEFAULT_API_BASE_URL
-    if not args.quiet:
-        print("Checking server status...")
+    cc.print_info("Checking server status...", quiet=args.quiet)
     check_server_status(api_url, args.debug)
-    if not args.quiet:
-        print("Server is active.")
+    cc.print_success("Server is active.", quiet=args.quiet)
 
     options = TranslationOptions(
         input_path=args.input_path,
@@ -200,8 +192,7 @@ def main_logic(args: argparse.Namespace, parser: argparse.ArgumentParser) -> Non
 
     # --- Path Processing ---
     if os.path.isdir(args.input_path):
-        if not args.quiet:
-            print(f"Input is a directory. Translating all files in '{args.input_path}'...")
+        cc.print_info(f"Input is a directory. Translating all files in '{args.input_path}'...", quiet=args.quiet)
         process_directory(args, options)
     elif os.path.isfile(args.input_path):
         process_single_file(args.input_path, args.output, options)
@@ -284,10 +275,10 @@ def main() -> None:
     try:
         main_logic(args, parser)
     except TranslatorError as e:
-        print(f"\n---FATAL ERROR---\n{e}\n-------------------\n", file=sys.stderr)
+        cc.print_error(f"\n---FATAL ERROR---\n{e}\n-------------------\n")
         sys.exit(1)
     except Exception as e:
-        print(f"\n---UNEXPECTED FATAL ERROR---\n{e}\n-------------------\n", file=sys.stderr)
+        cc.print_error(f"\n---UNEXPECTED FATAL ERROR---\n{e}\n-------------------\n")
         sys.exit(1)
 
 
