@@ -95,3 +95,69 @@ def cleanup_markers(data: Union[Dict[str, Any], List[Any]]) -> None:
     elif isinstance(data, list):
         for item in data:
             cleanup_markers(item)
+def _extract_translation_from_response(
+    response: str,
+    debug: bool = False,
+    use_json_format: bool = False
+) -> str:
+    """Extracts a translation from a model's potentially complex response.
+
+    Models may return not just the translation but also explanatory text,
+    reasoning, or markdown formatting. This function isolates the core
+    translation using a series of prioritized strategies:
+
+    1.  **JSON Parsing**: If `use_json_format` is True, it first tries to parse
+        the response as JSON (handling markdown wrappers) and extract the value
+        from a 'translation' key.
+    2.  **Block Removal**: It strips out reasoning blocks like `<thinking>...</thinking>`.
+    3.  **Marker-based Extraction**: It looks for common headers like "Translation:"
+        and returns the text that follows.
+    4.  **Fallback**: If none of the above succeed, it returns the entire
+        cleaned response string.
+
+    Args:
+        response: The raw string response from the language model.
+        debug: If True, enables printing of debug information to stderr.
+        use_json_format: If True, specifies that the primary extraction method
+                         should be JSON parsing.
+
+    Returns:
+        The extracted translation string, or an empty string if extraction fails.
+    """
+    if use_json_format:
+        try:
+            # Handle cases where the JSON is wrapped in markdown ```json ... ```
+            if response.startswith("```json"):
+                response = response[7:-4].strip() # Remove ```json\n and \n```
+            elif response.startswith("```"):
+                 response = response[3:-3].strip()
+
+
+            data = json.loads(response)
+            if 'translation' in data and isinstance(data['translation'], str):
+                if debug:
+                    print(f"--- DEBUG: Extracted translation from JSON ---\n{data['translation']}\n------------------------------------", file=sys.stderr)
+                return data['translation']
+        except json.JSONDecodeError:
+            if debug:
+                print(f"--- DEBUG: JSON parsing failed, falling back to text extraction ---\n{response}\n------------------------------------", file=sys.stderr)
+
+    # Fallback to text-based extraction
+    # Remove <thinking>...</thinking> blocks
+    cleaned_response = strip_thinking_tags(response)
+
+    # Look for a marker and extract the text after it.
+    # The pattern looks for various common markers, case-insensitively.
+    marker_pattern = re.compile(r'(?:translation|translated text)\s*:\s*', re.IGNORECASE)
+    marker_match = marker_pattern.search(cleaned_response)
+
+    if marker_match:
+        if debug:
+            print(f"--- DEBUG: Extracting translation from response using marker ---\n{cleaned_response}\n------------------------------------", file=sys.stderr)
+        # Extract the text following the marker
+        translation = cleaned_response[marker_match.end():].strip()
+        return translation
+    else:
+        if debug:
+            print(f"--- DEBUG: No marker found, returning cleaned response ---\n{cleaned_response}\n------------------------------------", file=sys.stderr)
+        return cleaned_response
