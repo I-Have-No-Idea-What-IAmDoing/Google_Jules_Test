@@ -23,12 +23,12 @@ def get_translation(
     """Performs a translation request with validation and retries.
 
     This is the core function for direct (non-refined) translation. It:
-    1.  Constructs a prompt using templates from the model's configuration.
-    2.  Optionally adds a glossary and reasoning instructions.
-    3.  Sends the request to the specified API endpoint.
-    4.  Extracts the translation from the response.
-    5.  Validates the translation using `is_translation_valid`.
-    6.  Retries up to two times if the API call or validation fails.
+    1.  Constructs a prompt using templates from the model's configuration,
+        including system prompts and glossary injection.
+    2.  Sends the request to the specified API endpoint.
+    3.  Extracts the translation from the response.
+    4.  Validates the translation using `is_translation_valid`.
+    5.  Retries up to two times if the API call or validation fails.
 
     Args:
         text: The source text to translate.
@@ -46,31 +46,40 @@ def get_translation(
         The validated translated text as a string.
 
     Raises:
-        ConnectionError: If the API request fails after all retry attempts.
-        ValueError: If a valid translation cannot be obtained after all
-                    retry attempts.
+        TranslationError: If the API request or validation fails after all
+                          retry attempts.
     """
-    if use_reasoning:
-        template = model_config.get("reasoning_prompt_template", "{text}")
-        prompt = template.format(text=text)
-    else:
-        template = model_config.get("prompt_template", "{text}")
-        prompt = template.format(text=text)
-
+    # 1. Prepare glossary section
+    glossary_section = ""
     if glossary_text:
-        prompt = f"Please use this glossary for context:\n{glossary_text}\n\n{prompt}"
+        glossary_template = model_config.get("glossary_prompt_template", "{glossary_text}")
+        glossary_section = glossary_template.format(glossary_text=glossary_text)
+
+    # 2. Prepare main prompt
+    template_key = "reasoning_prompt_template" if use_reasoning else "prompt_template"
+    template = model_config.get(template_key, "{text}")
+    prompt = template.format(text=text, glossary_section=glossary_section)
 
     if debug:
         print(f"--- DEBUG: Translation Prompt ---\n{prompt}\n------------------------------------", file=sys.stderr)
 
+    # 3. Prepare payload with system prompt if available
     endpoint = model_config.get("endpoint", "chat/completions")
     payload = {"model": model_name, **model_config.get("params", {})}
+    system_prompt = model_config.get("system_prompt_template")
 
     if endpoint == "chat/completions":
-        payload["messages"] = [{"role": "user", "content": prompt}]
-    else:
-        payload["prompt"] = prompt
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+        payload["messages"] = messages
+    else:  # Legacy "completions" endpoint
+        # For older models, we combine the system prompt and user prompt.
+        full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
+        payload["prompt"] = full_prompt
 
+    # 4. Execute API call with retries
     for attempt in range(3):
         try:
             response_data = _api_request(endpoint, payload, api_base_url, debug=debug)
@@ -117,44 +126,9 @@ def _get_refined_translation(
     debug: bool,
     line_by_line: bool = False
 ) -> str:
-    """Orchestrates the two-step "refinement" translation process.
-
-    This high-level function manages a sophisticated translation workflow:
-    1.  **Load Draft Model**: Ensures the specified `draft_model` is loaded on
-        the server.
-    2.  **Generate Drafts**: Calls `get_translation` multiple times to create a
-        set of initial, diverse translations of the `original_text`.
-    3.  **Load Refine Model**: Ensures the `refine_model` is loaded.
-    4.  **Refine**: Constructs a new prompt containing the original text and all
-        the generated drafts, then calls the `refine_model` to produce a final,
-        synthesized translation. This step also includes validation and retries.
-
-    Args:
-        original_text: The source text to translate.
-        draft_model: Name of the model for generating initial drafts.
-        refine_model: Name of the model for synthesizing the final translation.
-        draft_model_config: Configuration for the draft model.
-        refine_model_config: Configuration for the refine model.
-        num_drafts: The number of drafts to generate.
-        api_base_url: The base URL of the API server.
-        glossary_text: Optional glossary to provide context.
-        glossary_for: When to apply the glossary ('draft', 'refine', or 'all').
-        reasoning_for: When to request reasoning ('draft', 'refine', or 'all').
-        verbose: If True, prints status messages like model switching.
-        debug: If True, enables extensive debug logging.
-        line_by_line: If True, signals that the text is a single line.
-
-    Returns:
-        The final, refined translation as a string.
-
-    Raises:
-        ValueError: If a valid refined translation cannot be obtained after
-                    all retry attempts.
-"""
+    """Orchestrates the two-step "refinement" translation process."""
     use_draft_reasoning = reasoning_for in ['draft', 'all']
     use_refine_reasoning = reasoning_for in ['refine', 'all']
-
-    # If glossary_for is not specified, default to applying it everywhere
     effective_glossary_for = glossary_for or 'all'
 
     # 1. Generate Drafts
@@ -177,23 +151,40 @@ def _get_refined_translation(
     ensure_model_loaded(refine_model, api_base_url, model_config=refine_model_config, verbose=verbose, debug=debug)
     draft_list = "\n".join(f"{i+1}. ```{d}```" for i, d in enumerate(drafts))
 
-    if use_refine_reasoning:
-        template = refine_model_config.get("refine_reasoning_prompt_template", "Refine: {draft_list}")
-        prompt = template.format(original_text=original_text, draft_list=draft_list)
-    else:
-        template = refine_model_config.get("refine_prompt_template", "Refine: {draft_list}")
-        prompt = template.format(original_text=original_text, draft_list=draft_list)
-
+    # Prepare glossary for the refinement prompt
+    refine_glossary_section = ""
     if glossary_text and effective_glossary_for in ['refine', 'all']:
-        prompt = f"Please use this glossary for context:\n{glossary_text}\n\n{prompt}"
+        glossary_template = refine_model_config.get("glossary_prompt_template", "{glossary_text}")
+        refine_glossary_section = glossary_template.format(glossary_text=glossary_text)
 
+    # Prepare the main refinement prompt
+    template_key = "refine_reasoning_prompt_template" if use_refine_reasoning else "refine_prompt_template"
+    template = refine_model_config.get(template_key, "Refine: {draft_list}")
+    prompt = template.format(
+        original_text=original_text,
+        draft_list=draft_list,
+        glossary_section=refine_glossary_section
+    )
+
+    if debug:
+        print(f"--- DEBUG: Refine Prompt ---\n{prompt}\n------------------------------------", file=sys.stderr)
+
+    # Prepare payload for the refinement API call
     endpoint = refine_model_config.get("endpoint", "chat/completions")
     payload = {"model": refine_model, **refine_model_config.get("params", {})}
-    if endpoint == "chat/completions":
-        payload["messages"] = [{"role": "user", "content": prompt}]
-    else:
-        payload["prompt"] = prompt
+    system_prompt = refine_model_config.get("system_prompt_template")
 
+    if endpoint == "chat/completions":
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+        payload["messages"] = messages
+    else: # Legacy "completions" endpoint
+        full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
+        payload["prompt"] = full_prompt
+
+    # Execute API call with retries
     for attempt in range(3):
         try:
             response_data = _api_request(endpoint, payload, api_base_url, debug=debug)
@@ -208,11 +199,9 @@ def _get_refined_translation(
             else:
                 refined_text = full_response
 
-            # After extraction, if the result is empty and we were expecting a result,
-            # it means the extraction failed or the model returned an empty response.
             if use_refine_reasoning and not refined_text:
                 if debug:
-                    print(f"--- DEBUG: Refine reasoning mode enabled, but extraction resulted in empty string. Retrying...", file=sys.stderr)
+                    print(f"--- DEBUG: Refine reasoning resulted in empty string. Retrying...", file=sys.stderr)
                 time.sleep(2 ** attempt)
                 continue
 

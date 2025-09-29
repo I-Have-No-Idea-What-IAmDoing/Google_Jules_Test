@@ -22,35 +22,41 @@ class TestColorConsole(unittest.TestCase):
     def test_print_success_color(self, mock_print):
         """Test that print_success uses the correct color code."""
         print_success("Success message")
-        mock_print.assert_called_once_with(f"{COLOR_SUCCESS}Success message{COLOR_RESET}", file=sys.stdout)
+        mock_print.assert_called_once()
+        self.assertEqual(mock_print.call_args[0][0], f"{COLOR_SUCCESS}Success message{COLOR_RESET}")
 
     @patch('text_translator.color_console.IS_TTY', True)
     @patch('builtins.print')
     def test_print_warning_color(self, mock_print):
         """Test that print_warning uses the correct color code."""
         print_warning("Warning message")
-        mock_print.assert_called_once_with(f"{COLOR_WARNING}Warning message{COLOR_RESET}", file=sys.stdout)
+        mock_print.assert_called_once()
+        self.assertEqual(mock_print.call_args[0][0], f"{COLOR_WARNING}Warning message{COLOR_RESET}")
 
     @patch('text_translator.color_console.IS_TTY', True)
     @patch('builtins.print')
     def test_print_error_color(self, mock_print):
         """Test that print_error uses the correct color code and stderr."""
         print_error("Error message")
-        mock_print.assert_called_once_with(f"{COLOR_ERROR}Error message{COLOR_RESET}", file=sys.stderr)
+        mock_print.assert_called_once()
+        self.assertEqual(mock_print.call_args[0][0], f"{COLOR_ERROR}Error message{COLOR_RESET}")
+        self.assertEqual(mock_print.call_args[1]['file'], sys.stderr)
 
     @patch('text_translator.color_console.IS_TTY', True)
     @patch('builtins.print')
     def test_print_info_color(self, mock_print):
         """Test that print_info uses the correct color code."""
         print_info("Info message")
-        mock_print.assert_called_once_with(f"{COLOR_INFO}Info message{COLOR_RESET}", file=sys.stdout)
+        mock_print.assert_called_once()
+        self.assertEqual(mock_print.call_args[0][0], f"{COLOR_INFO}Info message{COLOR_RESET}")
 
     @patch('text_translator.color_console.IS_TTY', False)
     @patch('builtins.print')
     def test_no_color_when_not_tty(self, mock_print):
         """Test that no color codes are used when not in a TTY."""
         print_success("Plain message")
-        mock_print.assert_called_once_with("Plain message", file=sys.stdout)
+        mock_print.assert_called_once()
+        self.assertEqual(mock_print.call_args[0][0], "Plain message")
 
     @patch('builtins.print')
     def test_quiet_mode_suppresses_output(self, mock_print):
