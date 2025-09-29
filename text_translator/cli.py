@@ -1,31 +1,15 @@
 import argparse
 import os
 import sys
-from typing import Optional
+from typing import Optional, Tuple, Dict, Any
 
 if __name__ == "__main__" and not __package__:
-    """
-    This block allows the script to be executed directly, which is useful for
-    development and testing. When a Python file is run as the main program,
-    its `__package__` attribute is `None`. This code detects that situation
-    and dynamically modifies the system path.
-
-    By adding the parent directory of the script's location to `sys.path`, it
-    ensures that the relative imports (like `from .translator_lib...`) work
-    correctly, just as they would if the script were imported as part of a
-    larger package. It also sets `__package__` to allow these imports.
-    """
     parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     if parent_dir not in sys.path:
         sys.path.insert(0, parent_dir)
-
-    # Temporarily adjust the package context to allow the imports to work
-    # as if the script were being run as a module.
     import text_translator
     __package__ = "text_translator"
 
-
-# Corrected imports to reflect the new modular structure
 from .translator_lib.core import translate_file
 from .translator_lib.options import TranslationOptions
 from .translator_lib import model_loader
@@ -35,110 +19,8 @@ from . import color_console as cc
 
 __version__ = "1.1.0"
 
-def process_single_file(input_file: str, output_file: Optional[str], options: 'TranslationOptions') -> None:
-    """Handles the translation process for a single file.
-
-    This function calls the core `translate_file` function and manages the
-    file I/O. It reads the input, gets the translated content, and then
-    either writes the result to the specified output file or prints it to
-    standard output if no output file is given. It also handles creating the
-    necessary output directories.
-
-    Args:
-        input_file: The full path to the source file to be translated.
-        output_file: The full path to the destination file. If None, the
-                     output will be printed to the console.
-        options: The `TranslationOptions` object containing all settings for
-                 the translation job.
-    """
-    try:
-        cc.print_info(f"Starting translation for '{input_file}'...", quiet=options.quiet)
-        if options.refine_mode:
-            cc.print_info(f"Using refinement mode with draft model '{options.draft_model}' and refiner '{options.model_name}'.", quiet=options.quiet)
-
-        # Update options for the single file being processed
-        options.input_path = input_file
-        options.output_path = output_file
-
-        translated_content = translate_file(options)
-
-        if output_file:
-            # Ensure the output directory exists
-            output_dir = os.path.dirname(output_file)
-            if output_dir:
-                os.makedirs(output_dir, exist_ok=True)
-
-            with open(output_file, 'w', encoding='utf-8') as f:
-                f.write(translated_content)
-            cc.print_success(f"\nTranslation complete. Output saved to {output_file}", quiet=options.quiet)
-        else:
-            # Print to stdout if no output file is specified
-            cc.print_translation(translated_content, quiet=options.quiet)
-
-    except Exception as e:
-        cc.print_error(f"Error processing file {input_file}: {e}")
-
-def process_directory(args: argparse.Namespace, options: 'TranslationOptions') -> None:
-    """Handles the translation process for an entire directory.
-
-    This function iterates through files in the input directory. For each file,
-    it determines the corresponding output path and then calls
-    `process_single_file` to perform the translation. It supports both flat
-    and recursive traversal of the input directory.
-
-    Args:
-        args: The `argparse.Namespace` object containing parsed command-line
-              arguments, used here for `input_path`, `output`, and `recursive`.
-        options: The `TranslationOptions` object containing all settings for
-                 the translation job.
-    """
-    input_dir = args.input_path
-    output_dir = args.output or f"{os.path.basename(input_dir)}_translated"
-
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir, exist_ok=True)
-
-    if args.recursive:
-        for root, _, files in os.walk(input_dir):
-            for file in files:
-                input_file = os.path.join(root, file)
-                relative_path = os.path.relpath(input_file, input_dir)
-                output_file = os.path.join(output_dir, relative_path)
-                process_single_file(input_file, output_file, options)
-    else:
-        for item in os.listdir(input_dir):
-            input_file = os.path.join(input_dir, item)
-            if os.path.isfile(input_file):
-                output_file = os.path.join(output_dir, item)
-                process_single_file(input_file, output_file, options)
-
-def main_logic(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
-    """Orchestrates the main application workflow after argument parsing.
-
-    This function acts as the central controller for the application. It takes
-    the parsed command-line arguments and performs the following sequence of
-    operations:
-
-    1.  **Argument Validation**: Performs higher-level validation that depends
-        on multiple arguments, such as ensuring `--draft-model` is present
-        when `--refine` is used.
-    2.  **Configuration Loading**: Loads the `models.json` file and retrieves
-        the specific configurations for the requested models.
-    3.  **Glossary Handling**: Reads the glossary file or text if provided.
-    4.  **API Setup**: Determines the correct API URL and performs a health
-        check to ensure the server is responsive.
-    5.  **Options Assembly**: Creates the `TranslationOptions` dataclass,
-        which centralizes all settings for the translation job.
-    6.  **Execution Dispatch**: Determines if the input path is a file or a
-        directory and calls the appropriate processing function
-        (`process_single_file` or `process_directory`).
-
-    Args:
-        args: The `argparse.Namespace` object containing all parsed and validated
-              command-line arguments.
-        parser: The `argparse.ArgumentParser` instance, used here to report
-                errors in a standard way.
-    """
+def _validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser):
+    """Performs validation checks on parsed command-line arguments."""
     if not os.path.exists(args.input_path):
         parser.error(f"Input path does not exist: {args.input_path}")
     if args.refine and not args.draft_model:
@@ -148,29 +30,34 @@ def main_logic(args: argparse.Namespace, parser: argparse.ArgumentParser) -> Non
     if args.glossary_for and not (args.glossary_file or args.glossary_text):
         parser.error("--glossary-for requires a glossary to be provided via --glossary-file or --glossary-text.")
 
-    # --- Load Model Configurations ---
+def _load_configs(args: argparse.Namespace, parser: argparse.ArgumentParser) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """Loads model configurations from the specified JSON file."""
     try:
         all_model_configs = model_loader.load_model_configs(args.models_file)
         main_model_config = model_loader.get_model_config(args.model, all_model_configs)
         draft_model_config = {}
         if args.draft_model:
             draft_model_config = model_loader.get_model_config(args.draft_model, all_model_configs)
+        return main_model_config, draft_model_config
     except model_loader.ModelConfigError as e:
         parser.error(str(e))
+    # This line is unreachable but satisfies type checkers
+    return {}, {}
 
-    # --- Glossary Processing ---
+
+def _build_translation_options(args: argparse.Namespace, main_model_config: Dict[str, Any], draft_model_config: Dict[str, Any]) -> TranslationOptions:
+    """Assembles the TranslationOptions object from arguments and configurations."""
     glossary_text = args.glossary_text
     if args.glossary_file:
         with open(args.glossary_file, 'r', encoding='utf-8') as f:
             glossary_text = f.read()
 
-    # --- API and Options Setup ---
     api_url = args.api_base_url or os.environ.get("OOBABOOGA_API_BASE_URL") or DEFAULT_API_BASE_URL
     cc.print_info("Checking server status...", quiet=args.quiet)
     check_server_status(api_url, args.debug)
     cc.print_success("Server is active.", quiet=args.quiet)
 
-    options = TranslationOptions(
+    return TranslationOptions(
         input_path=args.input_path,
         model_name=args.model,
         output_path=args.output,
@@ -190,7 +77,71 @@ def main_logic(args: argparse.Namespace, parser: argparse.ArgumentParser) -> Non
         draft_model_config=draft_model_config,
     )
 
-    # --- Path Processing ---
+def process_single_file(input_file: str, output_file: Optional[str], options: 'TranslationOptions') -> None:
+    """Handles the translation process for a single file."""
+    try:
+        cc.print_info(f"Starting translation for '{input_file}'...", quiet=options.quiet)
+        if options.refine_mode:
+            cc.print_info(f"Using refinement mode with draft model '{options.draft_model}' and refiner '{options.model_name}'.", quiet=options.quiet)
+
+        options.input_path = input_file
+        options.output_path = output_file
+
+        translated_content = translate_file(options)
+
+        if output_file:
+            output_dir = os.path.dirname(output_file)
+            if output_dir:
+                # Defensive check: ensure the target directory path is not a file.
+                if os.path.exists(output_dir) and not os.path.isdir(output_dir):
+                    cc.print_error(f"Error: Cannot create directory '{output_dir}' because a file with the same name exists.")
+                    return
+                os.makedirs(output_dir, exist_ok=True)
+
+            with open(output_file, 'w', encoding='utf-8') as f:
+                f.write(translated_content)
+            cc.print_success(f"\nTranslation complete. Output saved to {output_file}", quiet=options.quiet)
+        else:
+            cc.print_translation(translated_content, quiet=options.quiet)
+
+    except Exception as e:
+        cc.print_error(f"Error processing file {input_file}: {e}")
+
+def process_directory(args: argparse.Namespace, options: 'TranslationOptions') -> None:
+    """Handles the translation process for an entire directory."""
+    input_dir = args.input_path
+    output_dir_base = args.output or f"{os.path.basename(input_dir)}_translated"
+
+    if not os.path.exists(output_dir_base):
+        os.makedirs(output_dir_base, exist_ok=True)
+
+    if args.recursive:
+        for root, _, files in os.walk(input_dir):
+            for file in files:
+                input_file = os.path.join(root, file)
+                relative_path = os.path.relpath(input_file, input_dir)
+                output_file = os.path.join(output_dir_base, relative_path)
+
+                # Bug fix: Check for file/directory name collision before processing.
+                output_dir_of_file = os.path.dirname(output_file)
+                if os.path.exists(output_dir_of_file) and not os.path.isdir(output_dir_of_file):
+                    cc.print_error(f"Skipping '{input_file}': Cannot create output directory because a file named '{os.path.basename(output_dir_of_file)}' exists in the parent output directory.")
+                    continue
+
+                process_single_file(input_file, output_file, options)
+    else:
+        for item in os.listdir(input_dir):
+            input_file = os.path.join(input_dir, item)
+            if os.path.isfile(input_file):
+                output_file = os.path.join(output_dir_base, item)
+                process_single_file(input_file, output_file, options)
+
+def main_logic(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    """Orchestrates the main application workflow after argument parsing."""
+    _validate_args(args, parser)
+    main_model_config, draft_model_config = _load_configs(args, parser)
+    options = _build_translation_options(args, main_model_config, draft_model_config)
+
     if os.path.isdir(args.input_path):
         cc.print_info(f"Input is a directory. Translating all files in '{args.input_path}'...", quiet=args.quiet)
         process_directory(args, options)
@@ -199,29 +150,8 @@ def main_logic(args: argparse.Namespace, parser: argparse.ArgumentParser) -> Non
     else:
         parser.error(f"Input path is not a valid file or directory: {args.input_path}")
 
-
 def main() -> None:
-    """Defines and executes the command-line interface for the translator.
-
-    This function serves as the main entry point when the script is executed
-    from the command line. It is responsible for the entire workflow:
-
-    1.  **Argument Parsing**: Sets up `argparse` to define all available
-        command-line arguments, options, and help messages. This includes
-        core settings, directory options, refinement mode, and configuration paths.
-    2.  **Argument Validation**: Performs critical checks on the parsed arguments,
-        such as ensuring the input path exists and that required arguments for
-        certain modes (like `--draft-model` for `--refine`) are provided.
-    3.  **Configuration Loading**: Loads model definitions from the specified
-        `models.json` file.
-    4.  **Options Assembly**: Creates a `TranslationOptions` dataclass instance
-        from the command-line arguments and loaded configurations.
-    5.  **Server Check**: Pings the API server to ensure it is active before
-        proceeding.
-    6.  **Execution Dispatch**: Determines whether the input path is a file or a
-        directory and calls the appropriate handler function (`process_single_file`
-        or `process_directory`) to start the translation job.
-    """
+    """Defines and executes the command-line interface for the translator."""
     parser = argparse.ArgumentParser(
         description="A command-line tool to translate text files from Japanese to English using a local LLM API.",
         formatter_class=argparse.RawTextHelpFormatter,
@@ -232,30 +162,28 @@ def main() -> None:
                "  python -m text_translator.cli ./my_dir --model 'refiner-model' --refine --draft-model 'draft-model'"
     )
     
-    # --- Core Arguments ---
-    parser.add_argument("input_path", help="Path to the input file or directory.")
-    parser.add_argument("--model", required=True, help="Main translation model name (must exist in models.json).")
-    parser.add_argument("--output", help="Output file or directory path.")
-    parser.add_argument("--overwrite", action="store_true", help="Overwrite output if it exists.")
-    parser.add_argument('--version', action='version', version=f'%(prog)s {__version__}')
+    # Argument groups
+    core_group = parser.add_argument_group('Core Arguments')
+    core_group.add_argument("input_path", help="Path to the input file or directory.")
+    core_group.add_argument("--model", required=True, help="Main translation model name (must exist in models.json).")
+    core_group.add_argument("--output", help="Output file or directory path.")
+    core_group.add_argument("--overwrite", action="store_true", help="Overwrite output if it exists.")
+    core_group.add_argument('--version', action='version', version=f'%(prog)s {__version__}')
 
-    # --- Directory Processing ---
     dir_group = parser.add_argument_group('Directory Options')
     dir_group.add_argument('--recursive', dest='recursive', action='store_true', help="Process directories recursively (default).")
     dir_group.add_argument('--no-recursive', dest='recursive', action='store_false', help="Disable recursive processing.")
     parser.set_defaults(recursive=True)
 
-    # --- Refinement Mode ---
     refine_group = parser.add_argument_group('Refinement Mode')
     refine_group.add_argument("--refine", action="store_true", help="Enable refinement mode.")
     refine_group.add_argument("--draft-model", help="Model for draft translations (required for --refine).")
     refine_group.add_argument("--num-drafts", type=int, default=6, help="Number of drafts (default: 6).")
 
-    # --- Configuration ---
     config_group = parser.add_argument_group('Configuration')
     config_group.add_argument("--api-base-url", default=None, help="API base URL (env: OOBABOOGA_API_BASE_URL).")
-
     config_group.add_argument("--models-file", default=os.path.join(os.path.dirname(__file__), 'models.json'), help="Path to the models JSON configuration file.")
+
     glossary_group = config_group.add_mutually_exclusive_group()
     glossary_group.add_argument("--glossary-file", help="Path to a text file containing a glossary for context.")
     glossary_group.add_argument("--glossary-text", help="A string containing glossary terms.")
@@ -263,12 +191,11 @@ def main() -> None:
     config_group.add_argument("--reasoning-for", choices=['draft', 'refine', 'main', 'all'], default=None, help="Enable step-by-step reasoning for specific model types.")
     config_group.add_argument("--line-by-line", action="store_true", help="Process files line by line instead of translating the whole content at once.")
 
-    # --- General & Info ---
     info_group = parser.add_argument_group('General')
     verbosity_group = info_group.add_mutually_exclusive_group()
-    verbosity_group.add_argument("--verbose", action="store_true", help="Enable verbose output, showing model loading and other details.")
-    verbosity_group.add_argument("--quiet", "-q", action="store_true", help="Suppress all informational output, printing only final results or errors.")
-    info_group.add_argument("--debug", action="store_true", help="Enable extensive debug output for troubleshooting.")
+    verbosity_group.add_argument("--verbose", action="store_true", help="Enable verbose output.")
+    verbosity_group.add_argument("--quiet", "-q", action="store_true", help="Suppress all informational output.")
+    info_group.add_argument("--debug", action="store_true", help="Enable extensive debug output.")
 
     args = parser.parse_args()
 
@@ -280,7 +207,6 @@ def main() -> None:
     except Exception as e:
         cc.print_error(f"\n---UNEXPECTED FATAL ERROR---\n{e}\n-------------------\n")
         sys.exit(1)
-
 
 if __name__ == "__main__":
     main()
