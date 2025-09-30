@@ -211,8 +211,10 @@ class TestGetTranslation(unittest.TestCase):
     def setUp(self):
         """Sets up a standard model configuration for translation tests."""
         self.model_config = {
-            "prompt_template": "Translate: {text}",
-            "reasoning_prompt_template": "Reason and translate: {text}",
+            "prompt_template": "{glossary_section}Translate: {text}",
+            "reasoning_prompt_template": "{glossary_section}Reason and translate: {text}",
+            "glossary_prompt_template": "# Glossary\n{glossary_text}",
+            "system_prompt_template": "You are a translator.",
             "params": {"temperature": 0.1, "top_k": 10}
         }
 
@@ -228,7 +230,11 @@ class TestGetTranslation(unittest.TestCase):
             args, _ = mock_api_request.call_args
             payload = args[1]
 
-            self.assertEqual(payload['messages'][0]['content'], "Translate: original")
+            # System prompt should be first
+            self.assertEqual(payload['messages'][0]['role'], "system")
+            self.assertEqual(payload['messages'][0]['content'], "You are a translator.")
+            # User prompt should be second (glossary is empty here)
+            self.assertEqual(payload['messages'][1]['content'], "Translate: original")
             self.assertEqual(payload['model'], "test-model")
             self.assertEqual(payload['temperature'], 0.1)
             self.assertEqual(payload['top_k'], 10)
@@ -245,7 +251,7 @@ class TestGetTranslation(unittest.TestCase):
 
             args, _ = mock_api_request.call_args
             payload = args[1]
-            self.assertEqual(payload['messages'][0]['content'], "Reason and translate: original")
+            self.assertEqual(payload['messages'][1]['content'], "Reason and translate: original")
 
     def test_get_translation_with_glossary(self):
         """Test that a glossary is correctly added to the prompt."""
@@ -253,9 +259,17 @@ class TestGetTranslation(unittest.TestCase):
              patch('text_translator.translator_lib.validation.is_translation_valid', return_value=True):
 
             mock_api_request.return_value = {"choices": [{"message": {"content": "translated"}}]}
-            translation.get_translation("text", "model", "http://test.url", self.model_config, glossary_text="glossary")
-            prompt = mock_api_request.call_args[0][1]['messages'][0]['content']
-            self.assertIn("Please use this glossary", prompt)
+            translation.get_translation("text", "model", "http://test.url", self.model_config, glossary_text="my_glossary")
+
+            # Check system prompt
+            messages = mock_api_request.call_args[0][1]['messages']
+            self.assertEqual(messages[0]['role'], "system")
+            self.assertEqual(messages[0]['content'], "You are a translator.")
+
+            # Check user prompt
+            user_prompt = messages[1]['content']
+            self.assertIn("# Glossary\nmy_glossary", user_prompt)
+            self.assertIn("Translate: text", user_prompt)
 
     def test_get_translation_retry_on_invalid(self):
         """Test that get_translation retries if the first result is invalid."""

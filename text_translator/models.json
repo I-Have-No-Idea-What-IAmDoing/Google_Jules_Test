@@ -1,12 +1,14 @@
 {
   "_default": {
     "endpoint": "chat/completions",
-    "prompt_template": "Translate the following segment into English, without additional explanation or commentary and making sure to keep all tags the same:\n\n{text}",
-    "reasoning_prompt_template": "First, provide a step-by-step reasoning for your translation, including cultural nuances and grammar points and making sure to keep all tags the same. Then, on a new line, provide the final translation, and nothing else, prefixed with 'Translation:'.\n\nOriginal text: {text}",
-    "refine_prompt_template": "Refine these translations of '{original_text}':\n{draft_list}",
-    "refine_reasoning_prompt_template": "First, provide a step-by-step reasoning for your translation refinement, explaining your choices. Then, on a new line, provide the final refined translation, and nothing else, prefixed with 'Translation:'.\n\nRefine these translations of '{original_text}':\n{draft_list}",
+    "system_prompt_template": "You are an expert translator specializing in Japanese to English translations. Your task is to translate the user's text with high accuracy, preserving the original meaning, tone, and formatting, including all XML/HTML tags. Adhere to any provided glossary terms.",
+    "glossary_prompt_template": "\n\n# Glossary\nThis glossary provides specific translations for key terms. You must use these translations as provided:\n\n{glossary_text}",
+    "prompt_template": "{glossary_section}Translate the following segment into English, without additional explanation or commentary:\n\n{text}",
+    "reasoning_prompt_template": "{glossary_section}First, provide a step-by-step reasoning for your translation of the following text, including cultural nuances, grammar points, and choices for specific terms. Then, on a new line, provide the final translation, and nothing else, prefixed with 'Translation:'.\n\nOriginal text: {text}",
+    "refine_prompt_template": "{glossary_section}You will be given a Japanese text and several draft English translations. Your task is to analyze them and produce a single, refined English translation that is superior to the drafts. The final translation should be natural-sounding and accurate. Only output the refined translation, do not explain.\n\nOriginal text:\n```{original_text}```\n\nDraft translations:\n{draft_list}",
+    "refine_reasoning_prompt_template": "{glossary_section}First, provide a step-by-step reasoning for your translation refinement, explaining your choices and why they improve upon the drafts. Then, on a new line, provide the final refined translation, and nothing else, prefixed with 'Translation:'.\n\nOriginal text:\n```{original_text}```\n\nDraft translations:\n{draft_list}",
     "use_json_format": false,
-	"params": {
+    "params": {
       "temperature": 0.7,
       "top_p": 0.9,
       "top_k": 40,
@@ -15,13 +17,12 @@
   },
   "example-model-name-template": {
     "inherits": "_default",
-    "prompt_template": "Translate this specific text into English:\n{text}",
+    "prompt_template": "{glossary_section}Translate this specific text into English:\n{text}",
     "params": {
       "temperature": 0.85,
       "top_p": 1.0
     }
   },
-
   "legacy-completion-model": {
     "inherits": "_default",
     "endpoint": "completions",
@@ -29,24 +30,23 @@
       "temperature": 0.9
     }
   },
-  
   "Hunyuan-MT-Chimera-7B.f16.gguf": {
     "inherits": "_default",
-	"refine_prompt_template": "Analyze the following multiple English translations of the Japanese segment surrounded in triple backticks and generate a single refined English translation. Only output the refined translation, do not explain.\n\nThe Japanese segments:\n```{original_text}```\n\nThe multiple English translations:{draft_list}",
-	"params": {
+    "refine_prompt_template": "Analyze the following multiple English translations of the Japanese segment surrounded in triple backticks and generate a single refined English translation. Only output the refined translation, do not explain.\n\nThe Japanese segments:\n```{original_text}```\n\nThe multiple English translations:{draft_list}",
+    "params": {
       "temperature": 0.7,
       "top_p": 0.6,
       "top_k": 20
-    }	
+    }
   },
-	"Magistral-Small-2509-UD-Q5_K_XL.gguf": {
-		"inherits": "_default",
-		"extra_flags": {
-			"jinja": "",
-			"special": ""
-		},
-		"params": {
-		  "top_p": 0.95
-		}
+  "Magistral-Small-2509-UD-Q5_K_XL.gguf": {
+    "inherits": "_default",
+    "extra_flags": {
+      "jinja": "",
+      "special": ""
+    },
+    "params": {
+      "top_p": 0.95
+    }
   }
 }
