@@ -10,7 +10,7 @@ if __name__ == '__main__':
         COLOR_SUCCESS, COLOR_WARNING, COLOR_ERROR, COLOR_INFO, COLOR_RESET
     )
 else:
-    from ..color_console import (
+    from text_translator.color_console import (
         print_success, print_warning, print_error, print_info, print_translation,
         COLOR_SUCCESS, COLOR_WARNING, COLOR_ERROR, COLOR_INFO, COLOR_RESET
     )

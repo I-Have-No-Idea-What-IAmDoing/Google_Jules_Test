@@ -20,6 +20,8 @@ def strip_thinking_tags(text: str) -> str:
     text = re.sub(r'<(thinking|think)>.*?</\1>', '', text, flags=re.DOTALL | re.IGNORECASE)
     # Pattern for [think]...[/think]
     text = re.sub(r'\[think\].*?\[/think\]', '', text, flags=re.DOTALL | re.IGNORECASE)
+    # Pattern for ◁think▷...◁/think▷
+    text = re.sub(r'◁think▷.*?◁/think▷', '', text, flags=re.DOTALL | re.IGNORECASE)
     return text.strip()
 
 def collect_text_nodes(data: Union[Dict[str, Any], List[Any]], nodes_list: List[Dict[str, Any]]) -> None:
