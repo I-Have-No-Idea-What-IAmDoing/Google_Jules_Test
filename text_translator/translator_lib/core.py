@@ -8,7 +8,12 @@ from custom_xml_parser import parser
 from .options import TranslationOptions
 from .api_client import ensure_model_loaded
 from .translation import get_translation, _get_refined_translation
-from .data_processor import collect_text_nodes, cleanup_markers
+from .data_processor import (
+    collect_text_nodes,
+    cleanup_markers,
+    replace_tags_with_placeholders,
+    restore_tags_from_placeholders,
+)
 from .exceptions import TranslatorError
 
 
@@ -19,6 +24,8 @@ def _get_translation_for_text(text: str, options: TranslationOptions, is_line_by
     This helper function abstracts the logic for choosing between direct and
     refinement mode translation. It centralizes the call to either `get_translation`
     or `_get_refined_translation`, reducing code duplication in the main loop.
+    It also handles tag preservation by replacing tags with placeholders before
+    translation and restoring them after.
 
     Args:
         text: The text content to translate.
@@ -29,9 +36,15 @@ def _get_translation_for_text(text: str, options: TranslationOptions, is_line_by
     Returns:
         The translated text as a string.
     """
+    processed_text, tag_map = replace_tags_with_placeholders(text)
+
+    # If the text is empty or contains only tags, no need to translate.
+    if not processed_text.strip():
+        return text
+
     if options.refine_mode:
-        return _get_refined_translation(
-            original_text=text,
+        translated_text = _get_refined_translation(
+            original_text=processed_text,
             draft_model=options.draft_model,
             refine_model=options.model_name,
             draft_model_config=options.draft_model_config,
@@ -47,8 +60,8 @@ def _get_translation_for_text(text: str, options: TranslationOptions, is_line_by
         )
     else:  # Direct mode
         direct_glossary = options.glossary_text if options.glossary_for in [None, 'all', 'main'] else None
-        return get_translation(
-            text=text,
+        translated_text = get_translation(
+            text=processed_text,
             model_name=options.model_name,
             api_base_url=options.api_base_url,
             model_config=options.model_config,
@@ -57,6 +70,8 @@ def _get_translation_for_text(text: str, options: TranslationOptions, is_line_by
             use_reasoning=(options.reasoning_for in ['main', 'all']),
             line_by_line=is_line_by_line
         )
+
+    return restore_tags_from_placeholders(translated_text, tag_map)
 
 
 def translate_file(options: TranslationOptions) -> str:
