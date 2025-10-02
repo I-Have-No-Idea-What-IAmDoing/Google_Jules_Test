@@ -1,8 +1,56 @@
 import re
 import json
 import sys
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Union, Tuple
 from langdetect import detect, LangDetectException
+
+def replace_tags_with_placeholders(text: str) -> Tuple[str, Dict[str, str]]:
+    """Finds all XML/HTML-like tags and replaces them with unique placeholders.
+
+    This is to protect tags from being altered by the translation model.
+
+    Args:
+        text: The original string, which may contain tags.
+
+    Returns:
+        A tuple containing:
+        - The modified string with tags replaced by placeholders.
+        - A dictionary mapping each placeholder to its original tag.
+    """
+    # This regex finds anything that looks like an XML/HTML tag.
+    tag_pattern = re.compile(r'<[^>]+>')
+    tag_map = {}
+    placeholder_template = "__TAG_PLACEHOLDER_{}__"
+
+    def replacer(match):
+        placeholder = placeholder_template.format(len(tag_map))
+        tag_map[placeholder] = match.group(0)
+        return placeholder
+
+    processed_text = tag_pattern.sub(replacer, text)
+    return processed_text, tag_map
+
+
+def restore_tags_from_placeholders(text: str, tag_map: Dict[str, str]) -> str:
+    """Restores original tags from their placeholders in a translated string.
+
+    Args:
+        text: The translated string containing placeholders.
+        tag_map: The dictionary mapping placeholders back to their original tags.
+
+    Returns:
+        The string with all placeholders restored to their original tag values.
+    """
+    if not tag_map:
+        return text
+
+    # Sort keys by length descending to avoid replacing __TAG_0__ in __TAG_10__
+    sorted_placeholders = sorted(tag_map.keys(), key=len, reverse=True)
+
+    for placeholder in sorted_placeholders:
+        text = text.replace(placeholder, tag_map[placeholder])
+
+    return text
 
 def strip_thinking_tags(text: str) -> str:
     """Removes various thinking blocks like <thinking>...</thinking>,
